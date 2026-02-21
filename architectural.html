@@ -1,0 +1,725 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Random Stained-Glass Houses Generator</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #111824;
+      --ink: #0c0c0f;
+    }
+    html, body { height: 100%; margin: 0; background: var(--bg); color: #e7eefc; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+    .wrap { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+    header {
+      display: flex; gap: 10px; align-items: center; padding: 10px 12px;
+      background: linear-gradient(180deg, #0f1724, #0b0f14);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    button {
+      background: #1e2a3f; color: #e7eefc; border: 1px solid rgba(255,255,255,0.14);
+      padding: 8px 12px; border-radius: 10px; cursor: pointer; font-weight: 650;
+    }
+    button:hover { filter: brightness(1.08); }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    label { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; opacity: 0.95; }
+    input[type="range"] { width: 160px; }
+    .canvasWrap { display: grid; place-items: center; padding: 14px; }
+    canvas {
+      width: min(1200px, calc(100vw - 28px));
+      aspect-ratio: 16 / 9;
+      height: auto;
+      background: #f7f3ea;
+      border-radius: 14px;
+      box-shadow: 0 12px 60px rgba(0,0,0,0.45);
+    }
+    .hint { font-size: 12px; opacity: 0.7; margin-left: auto; }
+    .kbd { border: 1px solid rgba(255,255,255,0.2); border-bottom-width: 2px; padding: 2px 6px; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono"; font-size: 12px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="row">
+      <button id="regen">Regenerate</button>
+      <button id="save">Save PNG</button>
+      <label>Complexity <input id="complexity" type="range" min="0" max="100" value="55"></label>
+      <label>Seed <input id="seed" type="text" size="10" placeholder="random"></label>
+    </div>
+    <div class="hint">Hotkeys: <span class="kbd">R</span> regenerate, <span class="kbd">S</span> save</div>
+  </header>
+  <div class="canvasWrap">
+    <canvas id="c" width="1600" height="900"></canvas>
+  </div>
+</div>
+
+<script>
+(() => {
+  const canvas = document.getElementById("c");
+  const ctx = canvas.getContext("2d");
+  const regenBtn = document.getElementById("regen");
+  const saveBtn  = document.getElementById("save");
+  const complexityEl = document.getElementById("complexity");
+  const seedEl = document.getElementById("seed");
+
+  // ---------- deterministic PRNG (mulberry32) ----------
+  function xmur3(str) {
+    let h = 1779033703 ^ str.length;
+    for (let i = 0; i < str.length; i++) {
+      h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+      h = (h << 13) | (h >>> 19);
+    }
+    return function() {
+      h = Math.imul(h ^ (h >>> 16), 2246822507);
+      h = Math.imul(h ^ (h >>> 13), 3266489909);
+      h ^= h >>> 16;
+      return h >>> 0;
+    };
+  }
+  function mulberry32(a) {
+    return function() {
+      let t = a += 0x6D2B79F5;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function makeRng(seedStr) {
+    const seedFn = xmur3(seedStr);
+    return mulberry32(seedFn());
+  }
+  function randInt(rng, a, b) { return Math.floor(rng() * (b - a + 1)) + a; }
+  function choice(rng, arr) { return arr[Math.floor(rng() * arr.length)]; }
+  function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+
+  // ---------- palette (muted architectural stained-glass) ----------
+  const PALETTES = [
+    ["#f2efe1", "#2f4f58", "#1f4c7a", "#6f6670", "#d8a1ad", "#de8e79", "#d45f47", "#d4b247", "#ead68f", "#93aa86", "#83c9df", "#b8a9d8"],
+    ["#f0ecdd", "#365866", "#246198", "#5e585f", "#c895a7", "#d8816a", "#c7523e", "#c9a63e", "#e4cf82", "#89a076", "#76bdd5", "#aa9ccc"],
+    ["#f3f0e4", "#314b54", "#2a567f", "#6a6170", "#d2a7b7", "#d88b74", "#cf614a", "#d1af4d", "#eadb9b", "#9bb28e", "#8cc8dd", "#b9aed2"]
+  ];
+  const GLASS_BASE = "#f2efe1";
+  const LEAD_DARK = "#2a262c";
+
+  // ---------- drawing helpers ----------
+  function setInk(ctx, w) {
+    ctx.strokeStyle = LEAD_DARK;
+    ctx.lineWidth = w;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+  }
+
+  function fillRoundRect(ctx, x, y, w, h, r) {
+    r = Math.min(r, w/2, h/2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function strokeRoundRect(ctx, x, y, w, h, r) {
+    r = Math.min(r, w/2, h/2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  function poly(ctx, pts) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+  }
+
+  function stripedFill(ctx, rng, x, y, w, h, palette, angleDeg, stripeW) {
+    // clip to rect, then draw stripes
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+
+    // background
+    ctx.fillStyle = choice(rng, palette);
+    ctx.fillRect(x, y, w, h);
+
+    const ang = angleDeg * Math.PI/180;
+    const cx = x + w/2, cy = y + h/2;
+
+    ctx.translate(cx, cy);
+    ctx.rotate(ang);
+    ctx.translate(-cx, -cy);
+
+    const diag = Math.hypot(w, h);
+    const start = -diag;
+    const end = diag*2;
+
+    for (let t = start; t < end; t += stripeW) {
+      ctx.fillStyle = choice(rng, palette);
+      ctx.fillRect(x + t, y - diag, stripeW * 0.72, diag * 4);
+    }
+    ctx.restore();
+  }
+
+  function dottedBorder(ctx, rng, x, y, w, h, inset, dotR, step) {
+    const xi = x + inset, yi = y + inset, wi = w - inset*2, hi = h - inset*2;
+    ctx.save();
+    ctx.fillStyle = GLASS_BASE;
+    for (let px = xi; px <= xi + wi; px += step) {
+      ctx.beginPath(); ctx.arc(px, yi, dotR, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(px, yi + hi, dotR, 0, Math.PI*2); ctx.fill();
+    }
+    for (let py = yi; py <= yi + hi; py += step) {
+      ctx.beginPath(); ctx.arc(xi, py, dotR, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(xi + wi, py, dotR, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function framedPanel(ctx, rng, rect, palette, style) {
+    const {x,y,w,h} = rect;
+    const pad = Math.max(10, Math.min(w,h)*0.06);
+    const r = Math.min(w,h)*0.06;
+
+    // base background (often diagonal stripes)
+    if (rng() < 0.7) {
+      const angle = choice(rng, [35, -35, 25, -25, 45, -45]);
+      const stripeW = clamp(Math.min(w,h)*0.11 + rng()*Math.min(w,h)*0.06, 16, 64);
+      stripedFill(ctx, rng, x, y, w, h, palette, angle, stripeW);
+    } else {
+      ctx.fillStyle = choice(rng, palette);
+      fillRoundRect(ctx, x, y, w, h, r);
+    }
+
+    // outer thick border
+    setInk(ctx, Math.max(6, Math.min(w,h)*0.05));
+    strokeRoundRect(ctx, x+2, y+2, w-4, h-4, r);
+
+    // optional dotted frame
+    if (rng() < 0.55) {
+      dottedBorder(ctx, rng, x, y, w, h, pad*0.55, Math.max(2.2, Math.min(w,h)*0.012), Math.max(12, Math.min(w,h)*0.07));
+    }
+
+    // inner border
+    setInk(ctx, Math.max(3, Math.min(w,h)*0.02));
+    strokeRoundRect(ctx, x+pad, y+pad, w-pad*2, h-pad*2, r*0.7);
+
+    // inner fill patch (to give that “panel” look)
+    if (style === "solid") {
+      ctx.fillStyle = choice(rng, palette);
+      fillRoundRect(ctx, x+pad, y+pad, w-pad*2, h-pad*2, r*0.7);
+    }
+  }
+
+  function drawWindowGrid(ctx, rng, x, y, w, h, frameW, mullionW) {
+    // window glass base
+    ctx.fillStyle = GLASS_BASE;
+    ctx.fillRect(x, y, w, h);
+
+    setInk(ctx, frameW);
+    ctx.strokeRect(x, y, w, h);
+
+    // mullions (2x2 or 2x3-ish)
+    const cols = (rng() < 0.55) ? 2 : 3;
+    const rows = (rng() < 0.55) ? 2 : 3;
+
+    setInk(ctx, mullionW);
+    for (let i=1;i<cols;i++) {
+      const px = x + (w/cols)*i;
+      ctx.beginPath(); ctx.moveTo(px, y); ctx.lineTo(px, y+h); ctx.stroke();
+    }
+    for (let j=1;j<rows;j++) {
+      const py = y + (h/rows)*j;
+      ctx.beginPath(); ctx.moveTo(x, py); ctx.lineTo(x+w, py); ctx.stroke();
+    }
+  }
+
+  function drawArchWindow(ctx, rng, x, y, w, h, frameW, mullionW) {
+    // rounded top window
+    const r = w/2;
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(x, y+h);
+    ctx.lineTo(x, y+r);
+    ctx.arc(x+r, y+r, r, Math.PI, 0);
+    ctx.lineTo(x+w, y+h);
+    ctx.closePath();
+    ctx.clip();
+    ctx.fillStyle = GLASS_BASE;
+    ctx.fillRect(x, y, w, h);
+    ctx.restore();
+
+    setInk(ctx, frameW);
+    ctx.beginPath();
+    ctx.moveTo(x, y+h);
+    ctx.lineTo(x, y+r);
+    ctx.arc(x+r, y+r, r, Math.PI, 0);
+    ctx.lineTo(x+w, y+h);
+    ctx.closePath();
+    ctx.stroke();
+
+    // mullions
+    setInk(ctx, mullionW);
+    ctx.beginPath(); ctx.moveTo(x+w/2, y+r*0.2); ctx.lineTo(x+w/2, y+h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, y+h*0.55); ctx.lineTo(x+w, y+h*0.55); ctx.stroke();
+  }
+
+  function drawRoundWindow(ctx, rng, cx, cy, rad, frameW, palette) {
+    // outer ring
+    ctx.save();
+    ctx.fillStyle = choice(rng, palette);
+    ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI*2); ctx.fill();
+    setInk(ctx, frameW);
+    ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI*2); ctx.stroke();
+
+    // inner glass
+    ctx.fillStyle = GLASS_BASE;
+    ctx.beginPath(); ctx.arc(cx, cy, rad*0.62, 0, Math.PI*2); ctx.fill();
+    setInk(ctx, Math.max(2, frameW*0.5));
+    ctx.beginPath(); ctx.arc(cx, cy, rad*0.62, 0, Math.PI*2); ctx.stroke();
+
+    // spokes
+    const spokes = choice(rng, [4,6,8]);
+    for (let i=0;i<spokes;i++) {
+      const a = (Math.PI*2/spokes)*i;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(a)*rad*0.62, cy + Math.sin(a)*rad*0.62);
+      ctx.stroke();
+    }
+
+    // stained ring segments
+    const segs = 28;
+    for (let i=0;i<segs;i++) {
+      const a0 = (Math.PI*2/segs)*i;
+      const a1 = (Math.PI*2/segs)*(i+1);
+      ctx.fillStyle = choice(rng, palette);
+      ctx.beginPath();
+      ctx.arc(cx, cy, rad*0.92, a0, a1);
+      ctx.arc(cx, cy, rad*0.72, a1, a0, true);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // ring outline
+    setInk(ctx, Math.max(2, frameW*0.45));
+    ctx.beginPath(); ctx.arc(cx, cy, rad*0.92, 0, Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, rad*0.72, 0, Math.PI*2); ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawGable(ctx, rng, rect, palette) {
+    const {x,y,w,h} = rect;
+    const pad = Math.min(w,h)*0.12;
+    const roofH = h*0.32;
+
+    const bx = x + pad, by = y + pad + roofH*0.35, bw = w - pad*2, bh = h - pad*2 - roofH*0.15;
+
+    // roof polygon
+    const roof = [
+      {x: x+w/2, y: y+pad},
+      {x: x+w-pad, y: y+pad+roofH},
+      {x: x+pad, y: y+pad+roofH}
+    ];
+    ctx.fillStyle = choice(rng, palette);
+    poly(ctx, roof); ctx.fill();
+    setInk(ctx, Math.max(3, Math.min(w,h)*0.03));
+    poly(ctx, roof); ctx.stroke();
+
+    // body
+    ctx.fillStyle = choice(rng, palette);
+    ctx.fillRect(bx, by, bw, bh);
+    setInk(ctx, Math.max(3, Math.min(w,h)*0.03));
+    ctx.strokeRect(bx, by, bw, bh);
+
+    // "log" bands
+    if (rng() < 0.6) {
+      const bands = randInt(rng, 5, 9);
+      const bandH = bh / bands;
+      for (let i=0;i<bands;i++) {
+        ctx.fillStyle = choice(rng, palette);
+        ctx.fillRect(bx, by + i*bandH, bw, bandH*0.62);
+      }
+      setInk(ctx, Math.max(2, Math.min(w,h)*0.012));
+      for (let i=0;i<=bands;i++) {
+        const py = by + i*bandH;
+        ctx.beginPath(); ctx.moveTo(bx, py); ctx.lineTo(bx+bw, py); ctx.stroke();
+      }
+    }
+
+    // window
+    const winW = bw*0.5, winH = bh*0.55;
+    const wx = bx + (bw-winW)/2;
+    const wy = by + bh*0.18;
+    if (rng() < 0.45) drawArchWindow(ctx, rng, wx, wy, winW, winH, Math.max(3, w*0.015), Math.max(2, w*0.009));
+    else drawWindowGrid(ctx, rng, wx, wy, winW, winH, Math.max(3, w*0.015), Math.max(2, w*0.009));
+  }
+
+  function drawTallSpire(ctx, rng, rect, palette) {
+    const {x,y,w,h} = rect;
+    const pad = Math.min(w,h)*0.10;
+    const baseW = w*0.42;
+    const cx = x + w/2;
+    const topY = y + pad;
+    const baseY = y + h - pad;
+    const baseX = cx - baseW/2;
+
+    // background stripes inside the spire
+    ctx.save();
+    const tri = [
+      {x: cx, y: topY},
+      {x: baseX + baseW, y: baseY},
+      {x: baseX, y: baseY},
+    ];
+    poly(ctx, tri);
+    ctx.clip();
+    stripedFill(ctx, rng, x, y, w, h, palette, choice(rng, [0,90,45,-45]), clamp(Math.min(w,h)*0.10, 12, 42));
+    ctx.restore();
+
+    // outline
+    setInk(ctx, Math.max(4, Math.min(w,h)*0.04));
+    poly(ctx, tri); ctx.stroke();
+
+    // small inset triangle
+    if (rng() < 0.5) {
+      const inset = Math.min(w,h)*0.06;
+      const tri2 = [
+        {x: cx, y: topY + inset*1.2},
+        {x: baseX + baseW - inset, y: baseY - inset},
+        {x: baseX + inset, y: baseY - inset},
+      ];
+      setInk(ctx, Math.max(2, Math.min(w,h)*0.02));
+      poly(ctx, tri2); ctx.stroke();
+    }
+  }
+
+  function drawDoorHouse(ctx, rng, rect, palette) {
+    const {x,y,w,h} = rect;
+    const pad = Math.min(w,h)*0.11;
+    const roofH = h*0.22;
+
+    // house silhouette
+    const house = [
+      {x: x+w/2, y: y+pad},
+      {x: x+w-pad, y: y+pad+roofH},
+      {x: x+w-pad, y: y+h-pad},
+      {x: x+pad, y: y+h-pad},
+      {x: x+pad, y: y+pad+roofH}
+    ];
+    ctx.fillStyle = choice(rng, palette);
+    poly(ctx, house); ctx.fill();
+    setInk(ctx, Math.max(4, Math.min(w,h)*0.04));
+    poly(ctx, house); ctx.stroke();
+
+    // side bubble columns (like the reference)
+    if (rng() < 0.75) {
+      const bubbles = randInt(rng, 4, 7);
+      for (const side of [-1, 1]) {
+        for (let i=0;i<bubbles;i++) {
+          const rr = (Math.min(w,h) * (0.035 + rng()*0.02));
+          const cx = x + w/2 + side*(w*0.22);
+          const cy = y + pad + roofH + (h - pad*2 - roofH) * ( (i+0.5)/bubbles );
+          ctx.fillStyle = choice(rng, palette);
+          ctx.beginPath(); ctx.arc(cx, cy, rr*1.25, 0, Math.PI*2); ctx.fill();
+          setInk(ctx, Math.max(2, rr*0.3));
+          ctx.beginPath(); ctx.arc(cx, cy, rr*1.25, 0, Math.PI*2); ctx.stroke();
+        }
+      }
+    }
+
+    // door
+    const doorW = w*0.22, doorH = h*0.44;
+    const dx = x + w/2 - doorW/2;
+    const dy = y + h - pad - doorH;
+    ctx.fillStyle = GLASS_BASE;
+    fillRoundRect(ctx, dx, dy, doorW, doorH, doorW*0.08);
+    setInk(ctx, Math.max(3, Math.min(w,h)*0.02));
+    strokeRoundRect(ctx, dx, dy, doorW, doorH, doorW*0.08);
+
+    // door frame
+    ctx.fillStyle = choice(rng, palette);
+    setInk(ctx, Math.max(3, Math.min(w,h)*0.02));
+    ctx.strokeRect(dx - doorW*0.16, dy - doorW*0.16, doorW*1.32, doorH + doorW*0.32);
+
+    // small top oculus
+    if (rng() < 0.6) {
+      const r = w*0.08;
+      drawRoundWindow(ctx, rng, x+w/2, y+pad+roofH*0.85, r, Math.max(3, Math.min(w,h)*0.02), palette);
+    }
+  }
+
+  function drawMedallionPanel(ctx, rng, rect, palette) {
+    const {x,y,w,h} = rect;
+    const cx = x + w*0.65;
+    const cy = y + h*0.38;
+    const r = Math.min(w,h)*0.30;
+
+    // big round window/medallion at top-right-ish
+    drawRoundWindow(ctx, rng, cx, cy, r, Math.max(5, Math.min(w,h)*0.045), palette);
+
+    // little hanging lantern shape below (like a vertical capsule)
+    const lx = x + w*0.55, ly = y + h*0.55, lw = w*0.22, lh = h*0.33;
+    ctx.fillStyle = choice(rng, palette);
+    fillRoundRect(ctx, lx, ly, lw, lh, lw*0.55);
+    setInk(ctx, Math.max(3, Math.min(w,h)*0.03));
+    strokeRoundRect(ctx, lx, ly, lw, lh, lw*0.55);
+
+    // inner stripes
+    ctx.save();
+    ctx.beginPath(); ctx.rect(lx+lw*0.12, ly+lh*0.18, lw*0.76, lh*0.68); ctx.clip();
+    stripedFill(ctx, rng, lx, ly, lw, lh, palette, 0, clamp(lw*0.22, 10, 28));
+    ctx.restore();
+  }
+
+  function drawCloverWindow(ctx, rng, rect, palette) {
+    const {x,y,w,h} = rect;
+    const cx = x + w*0.52, cy = y + h*0.47;
+    const rr = Math.min(w,h)*0.17;
+
+    // four circles (clover)
+    const offs = rr*0.75;
+    const centers = [
+      {x: cx-offs, y: cy-offs},
+      {x: cx+offs, y: cy-offs},
+      {x: cx-offs, y: cy+offs},
+      {x: cx+offs, y: cy+offs}
+    ];
+    for (const c of centers) {
+      ctx.fillStyle = choice(rng, palette);
+      ctx.beginPath(); ctx.arc(c.x, c.y, rr, 0, Math.PI*2); ctx.fill();
+      setInk(ctx, Math.max(3, rr*0.22));
+      ctx.beginPath(); ctx.arc(c.x, c.y, rr, 0, Math.PI*2); ctx.stroke();
+      // subtle stripes inside
+      if (rng() < 0.75) {
+        ctx.save();
+        ctx.beginPath(); ctx.arc(c.x, c.y, rr*0.92, 0, Math.PI*2); ctx.clip();
+        const stripeH = rr*0.28;
+        for (let yy = c.y-rr; yy < c.y+rr; yy += stripeH) {
+          ctx.fillStyle = choice(rng, palette);
+          ctx.fillRect(c.x-rr, yy, rr*2, stripeH*0.62);
+        }
+        ctx.restore();
+      }
+    }
+
+    // central arched window over the clover
+    const winW = w*0.32, winH = h*0.54;
+    const wx = x + (w - winW)/2;
+    const wy = y + h*0.18;
+    drawArchWindow(ctx, rng, wx, wy, winW, winH, Math.max(3, Math.min(w,h)*0.02), Math.max(2, Math.min(w,h)*0.012));
+
+    // outer shield-ish frame
+    const pad = Math.min(w,h)*0.10;
+    const shield = [
+      {x: x + w/2, y: y + pad},
+      {x: x + w - pad, y: y + h*0.35},
+      {x: x + w*0.82, y: y + h - pad},
+      {x: x + w*0.18, y: y + h - pad},
+      {x: x + pad, y: y + h*0.35}
+    ];
+    ctx.fillStyle = choice(rng, palette);
+    poly(ctx, shield); ctx.fill();
+    setInk(ctx, Math.max(4, Math.min(w,h)*0.04));
+    poly(ctx, shield); ctx.stroke();
+  }
+
+  function drawDiamondWindow(ctx, rng, rect, palette) {
+    const {x,y,w,h} = rect;
+    const pad = Math.min(w,h)*0.12;
+    const diamond = [
+      {x: x+w/2, y: y+pad},
+      {x: x+w-pad, y: y+h/2},
+      {x: x+w/2, y: y+h-pad},
+      {x: x+pad, y: y+h/2}
+    ];
+    ctx.fillStyle = choice(rng, palette);
+    poly(ctx, diamond); ctx.fill();
+    setInk(ctx, Math.max(4, Math.min(w,h)*0.04));
+    poly(ctx, diamond); ctx.stroke();
+
+    // inset diamond window grid
+    const inset = pad*0.55;
+    const d2 = [
+      {x: x+w/2, y: y+pad+inset},
+      {x: x+w-pad-inset, y: y+h/2},
+      {x: x+w/2, y: y+h-pad-inset},
+      {x: x+pad+inset, y: y+h/2}
+    ];
+    ctx.save();
+    poly(ctx, d2); ctx.clip();
+    stripedFill(ctx, rng, x, y, w, h, palette, choice(rng,[0,90]), clamp(Math.min(w,h)*0.12, 14, 48));
+    ctx.restore();
+
+    setInk(ctx, Math.max(3, Math.min(w,h)*0.02));
+    poly(ctx, d2); ctx.stroke();
+
+    // actual window (rect) inside
+    const ww = w*0.28, wh = h*0.55;
+    const wx = x + (w-ww)/2;
+    const wy = y + (h-wh)/2;
+    drawWindowGrid(ctx, rng, wx, wy, ww, wh, Math.max(3, w*0.015), Math.max(2, w*0.009));
+  }
+
+  function drawPanel(ctx, rng, rect, palette) {
+    // panel frame + then motif
+    framedPanel(ctx, rng, rect, palette, rng() < 0.25 ? "solid" : "stripe");
+
+    const {x,y,w,h} = rect;
+    const innerPad = Math.max(18, Math.min(w,h)*0.12);
+    const inner = { x: x+innerPad, y: y+innerPad, w: w-innerPad*2, h: h-innerPad*2 };
+
+    // motif picker weighted to resemble the reference
+    const motifs = [
+      {name:"gable", w: 0.23},
+      {name:"spire", w: 0.16},
+      {name:"doorhouse", w: 0.18},
+      {name:"medallion", w: 0.12},
+      {name:"clover", w: 0.14},
+      {name:"diamond", w: 0.17}
+    ];
+    let r = rng(), acc = 0, pick = motifs[motifs.length-1].name;
+    const sum = motifs.reduce((s,m)=>s+m.w,0);
+    for (const m of motifs) {
+      acc += m.w / sum;
+      if (r <= acc) { pick = m.name; break; }
+    }
+
+    // some motifs are better when centered; adjust a bit
+    const rect2 = {...inner};
+    if (pick === "spire") {
+      rect2.x = x + w*0.18; rect2.w = w*0.64;
+      rect2.y = y + h*0.08; rect2.h = h*0.84;
+    }
+
+    switch (pick) {
+      case "gable":     drawGable(ctx, rng, inner, palette); break;
+      case "spire":     drawTallSpire(ctx, rng, rect2, palette); break;
+      case "doorhouse": drawDoorHouse(ctx, rng, inner, palette); break;
+      case "medallion": drawMedallionPanel(ctx, rng, inner, palette); break;
+      case "clover":    drawCloverWindow(ctx, rng, inner, palette); break;
+      case "diamond":   drawDiamondWindow(ctx, rng, inner, palette); break;
+    }
+  }
+
+  // ---------- recursive layout (Mondrian-ish subdivision) ----------
+  function subdivide(rng, rect, depth, minSize, out) {
+    const {x,y,w,h} = rect;
+    if (depth <= 0 || w < minSize || h < minSize) {
+      out.push(rect);
+      return;
+    }
+    // sometimes stop early to keep chunky blocks
+    if (rng() < 0.16) { out.push(rect); return; }
+
+    const splitVertical = (w > h) ? (rng() < 0.62) : (rng() < 0.45);
+
+    if (splitVertical) {
+      const cut = clamp(w*(0.30 + rng()*0.40), minSize, w-minSize);
+      subdivide(rng, {x, y, w: cut, h}, depth-1, minSize, out);
+      subdivide(rng, {x: x+cut, y, w: w-cut, h}, depth-1, minSize, out);
+    } else {
+      const cut = clamp(h*(0.30 + rng()*0.40), minSize, h-minSize);
+      subdivide(rng, {x, y, w, h: cut}, depth-1, minSize, out);
+      subdivide(rng, {x, y: y+cut, w, h: h-cut}, depth-1, minSize, out);
+    }
+  }
+
+  // ---------- render ----------
+  function render(seedStr) {
+    const palette = choice(makeRng(seedStr + "|pal"), PALETTES);
+    const rng = makeRng(seedStr);
+
+    // background
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = GLASS_BASE;
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // compute layout based on complexity
+    const c = parseInt(complexityEl.value, 10) / 100;
+    const depth = Math.round(3 + c*4);         // 3..7
+    const minSize = 180 - Math.round(c*70);    // 180..110
+
+    const margin = 18;
+    const root = {x: margin, y: margin, w: canvas.width - margin*2, h: canvas.height - margin*2};
+
+    const cells = [];
+    subdivide(rng, root, depth, minSize, cells);
+
+    // small jitter to avoid perfect splits
+    for (const cell of cells) {
+      const jitter = Math.min(8, Math.min(cell.w, cell.h)*0.02);
+      cell.x += (rng()-0.5)*jitter;
+      cell.y += (rng()-0.5)*jitter;
+      cell.w += (rng()-0.5)*jitter;
+      cell.h += (rng()-0.5)*jitter;
+    }
+
+    // draw cells
+    for (const cell of cells) {
+      // enforce minimums for motif readability
+      const w = Math.max(120, cell.w);
+      const h = Math.max(120, cell.h);
+      const sep = clamp(Math.min(w, h) * 0.055, 6, 16);
+      const rect = {
+        x: cell.x + sep * 0.5,
+        y: cell.y + sep * 0.5,
+        w: Math.max(96, w - sep),
+        h: Math.max(96, h - sep)
+      };
+
+      // per-cell palette nudging: pick 6 colors + base
+      const pal = [palette[0]];
+      for (let i=0;i<8;i++) pal.push(choice(rng, palette));
+
+      drawPanel(ctx, rng, rect, pal);
+    }
+
+    // outer border
+    setInk(ctx, 16);
+    ctx.strokeRect(margin*0.5, margin*0.5, canvas.width - margin, canvas.height - margin);
+  }
+
+  function autoSeed() {
+    // short human-readable seed
+    return Math.random().toString(36).slice(2, 8) + "-" + Math.random().toString(36).slice(2, 6);
+  }
+
+  function run() {
+    const s = (seedEl.value || "").trim() || autoSeed();
+    seedEl.value = s;
+    render(s);
+  }
+
+  function savePng() {
+    const a = document.createElement("a");
+    a.download = `stained-glass-${seedEl.value || "random"}.png`;
+    a.href = canvas.toDataURL("image/png");
+    a.click();
+  }
+
+  regenBtn.addEventListener("click", run);
+  saveBtn.addEventListener("click", savePng);
+  complexityEl.addEventListener("input", () => run());
+  seedEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") run();
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key.toLowerCase() === "r") run();
+    if (e.key.toLowerCase() === "s") savePng();
+  });
+
+  run();
+})();
+</script>
+</body>
+</html>
