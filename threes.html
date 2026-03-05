@@ -96,9 +96,13 @@
     .cell.xsmall { font-size:15px; }
 
     /* Threes tile colors — only 1 (blue) and 2 (red) are colored; all others white */
-    .t1  { background:#2e6db0; color:#fff; border-color:#3a80c8; }
-    .t2  { background:#c8383a; color:#fff; border-color:#e04a4c; }
-    .t3, .t6, .t12, .t24, .t48, .t96, .t192, .t384, .t768, .thi {
+    .t1, .bb-cell.t1, .ss-cell.t1  { background:#2e6db0; color:#fff; border-color:#3a80c8; }
+    .t2, .bb-cell.t2, .ss-cell.t2  { background:#c8383a; color:#fff; border-color:#e04a4c; }
+    .t3, .t6, .t12, .t24, .t48, .t96, .t192, .t384, .t768, .thi,
+    .bb-cell.t3, .bb-cell.t6, .bb-cell.t12, .bb-cell.t24, .bb-cell.t48,
+    .bb-cell.t96, .bb-cell.t192, .bb-cell.t384, .bb-cell.t768, .bb-cell.thi,
+    .ss-cell.t3, .ss-cell.t6, .ss-cell.t12, .ss-cell.t24, .ss-cell.t48,
+    .ss-cell.t96, .ss-cell.t192, .ss-cell.t384, .ss-cell.t768, .ss-cell.thi {
       background:#f4f4f6; color:#111; border-color:#c8c8d0;
     }
 
@@ -166,75 +170,88 @@
     }
 
     /* ── Screensaver mode ──────────────────────────────────── */
+    body.screensaver .wrap,
+    body.screensaver #floatBtns { display: none; }
+
     #ssView {
       display: none;
       position: fixed;
       inset: 0;
-      background: var(--bg);
       z-index: 9999;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
+      background: var(--bg);
     }
-    body.screensaver #ssView { display: flex; }
-    body.screensaver .wrap,
-    body.screensaver #floatBtns { display: none; }
+    body.screensaver #ssView { display: block; }
 
-    #ssHeader {
-      display: flex;
-      gap: 36px;
-      align-items: baseline;
-      margin-bottom: 16px;
-      user-select: none;
-    }
-    .ss-kv { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-    .ss-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; }
-    .ss-val   { color: var(--text);  font-size: 28px; font-weight: 800; line-height: 1; }
-
+    /* Tiles fill every pixel of the viewport */
     #ssGrid {
+      position: absolute;
+      inset: 0;
       display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows:    repeat(4, 1fr);
+      gap: 4px;
+      padding: 4px;
       background: var(--grid);
-      /* columns / rows / gap / padding set dynamically via JS */
+    }
+    /* Default cell appearance — low specificity so tile color classes override */
+    .ss-cell {
+      background: var(--cell);
+      border: 1px solid var(--border);
+      color: #e6e6e6;
     }
     #ssGrid .ss-cell {
       display: flex;
       align-items: center;
       justify-content: center;
       font-weight: 800;
-      background: var(--cell);
-      border: 1px solid var(--border);
-      color: #e6e6e6;
-      user-select: none;
-      transition: background .12s;
+      border-radius: 8px;
+      /* font-size set per-render by JS */
     }
 
-    #ssFooter {
-      margin-top: 16px;
-      display: flex;
-      gap: 18px;
+    /* Floating HUD — barely visible, full opacity on hover */
+    #ssHUD {
+      display: none;
+      position: fixed;
+      bottom: 22px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10001;
       align-items: center;
-      user-select: none;
+      gap: 14px;
+      background: rgba(10,12,20,.88);
+      border: 1px solid #2a3250;
+      border-radius: 14px;
+      padding: 9px 22px;
+      white-space: nowrap;
+      opacity: .14;
+      transition: opacity .25s;
     }
-    #ssExitHint   { color: var(--muted); font-size: 12px; opacity: .45; }
+    body.screensaver #ssHUD { display: flex; }
+    #ssHUD:hover { opacity: 1; }
+    .ss-kv  { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+    .ss-lbl { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
+    .ss-val { color: var(--text); font-size: 16px; font-weight: 800; line-height: 1.2; }
+    .ss-div { width: 1px; height: 26px; background: #2a3250; flex-shrink: 0; }
     #ssAutoToggle {
       background: #0d1020; color: var(--text);
       border: 1px solid var(--border); border-radius: 8px;
-      padding: 5px 14px; font-size: 12px; cursor: pointer;
+      padding: 5px 12px; font-size: 12px; cursor: pointer;
     }
-    #ssAutoToggle:hover { border-color: #4b6ea8; }
+    #ssAutoToggle:hover  { border-color: #4b6ea8; }
     #ssAutoToggle.active { border-color: #3b69c8; background: #0f1f44; }
     #ssSpeedRow {
-      display: flex; gap: 6px; align-items: center;
-      color: var(--muted); font-size: 12px;
+      display: flex; gap: 5px; align-items: center;
+      color: var(--muted); font-size: 11px;
     }
-    #ssSpeedRow input { padding: 0; cursor: pointer; }
+    #ssSpeedRow input { padding: 0; cursor: pointer; width: 80px; }
+    #ssExitHint { color: var(--muted); font-size: 11px; opacity: .7; }
 
-    /* Game-over overlay inside screensaver */
+    /* Game-over overlay */
     #ssOverlay {
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,.65);
-      z-index: 10000;
+      background: rgba(0,0,0,.6);
+      z-index: 10002;
       display: none;
       flex-direction: column;
       align-items: center;
@@ -244,7 +261,7 @@
     }
     body.screensaver #ssOverlay.show { display: flex; }
     .ss-go-title {
-      font-size: clamp(32px, 6vw, 64px);
+      font-size: clamp(36px, 7vw, 80px);
       font-weight: 900;
       color: var(--text);
       letter-spacing: .04em;
@@ -252,7 +269,7 @@
       animation: ssFadeUp .35s ease forwards;
     }
     .ss-go-sub {
-      font-size: clamp(13px, 2vw, 18px);
+      font-size: clamp(14px, 2vw, 22px);
       color: var(--muted);
       opacity: 0;
       animation: ssFadeUp .35s ease .18s forwards;
@@ -261,6 +278,80 @@
       from { opacity: 0; transform: translateY(14px); }
       to   { opacity: 1; transform: translateY(0); }
     }
+
+    /* ── Big Board mode ─────────────────────────────────── */
+    body.bigboard .wrap,
+    body.bigboard #floatBtns { display: none; }
+
+    #bbView {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: var(--bg);
+    }
+    body.bigboard #bbView { display: block; }
+
+    /* Grid fills 100% of viewport; cols/rows set by JS */
+    #bbGrid {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      /* grid-template-columns/rows and gap set dynamically */
+      background: var(--grid);
+    }
+    /* Default cell appearance — low specificity so tile color classes override */
+    .bb-cell {
+      background: var(--cell);
+      border: 1px solid var(--border);
+      color: #e6e6e6;
+    }
+    #bbGrid .bb-cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      border-radius: 7px;
+      /* font-size set per-render by JS */
+    }
+
+    /* Floating HUD bar */
+    #bbHUD {
+      display: none;
+      position: fixed;
+      bottom: 22px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10001;
+      align-items: center;
+      gap: 14px;
+      background: rgba(10,12,20,.88);
+      border: 1px solid #2a3250;
+      border-radius: 14px;
+      padding: 9px 22px;
+      white-space: nowrap;
+      opacity: .14;
+      transition: opacity .25s;
+    }
+    body.bigboard #bbHUD { display: flex; }
+    #bbHUD:hover { opacity: 1; }
+    .bb-kv  { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+    .bb-lbl { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
+    .bb-val { color: var(--text); font-size: 16px; font-weight: 800; line-height: 1.2; }
+    .bb-div { width: 1px; height: 26px; background: #2a3250; flex-shrink: 0; }
+    #bbAutoToggle {
+      background: #0d1020; color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 5px 12px; font-size: 12px; cursor: pointer;
+    }
+    #bbAutoToggle:hover  { border-color: #4b6ea8; }
+    #bbAutoToggle.active { border-color: #3b69c8; background: #0f1f44; }
+    #bbSpeedRow {
+      display: flex; gap: 5px; align-items: center;
+      color: var(--muted); font-size: 11px;
+    }
+    #bbSpeedRow input { padding: 0; cursor: pointer; width: 80px; }
+    #bbExitHint { color: var(--muted); font-size: 11px; opacity: .7; }
   </style>
 </head>
 <body>
@@ -268,28 +359,58 @@
   <button id="hudToggle" title="Toggle HUD (H)">&#9776;</button>
 </div>
 
-<!-- Screensaver fullscreen view -->
+<!-- Screensaver: tiles fill the full viewport -->
 <div id="ssView">
-  <div id="ssHeader">
-    <div class="ss-kv"><div class="ss-label">Score</div><div class="ss-val" id="ssScore">0</div></div>
-    <div class="ss-kv"><div class="ss-label">Best</div><div class="ss-val" id="ssBest">0</div></div>
-    <div class="ss-kv"><div class="ss-label">Max tile</div><div class="ss-val" id="ssMax">0</div></div>
-    <div class="ss-kv"><div class="ss-label">Next</div><div class="ss-val" id="ssNext" style="font-size:20px">?</div></div>
-  </div>
   <div id="ssGrid"></div>
-  <div id="ssFooter">
-    <button id="ssAutoToggle" class="active">&#9654; Auto</button>
-    <div id="ssSpeedRow">
-      <label>Speed</label>
-      <input id="ssSpeed" type="range" min="20" max="600" value="140" style="width:100px" />
-      <span id="ssSpeedLabel">140ms</span>
-    </div>
-    <div id="ssExitHint">ESC &bull; click to exit</div>
-  </div>
 </div>
 
-<!-- Game-over flash overlay (inside screensaver) -->
+<!-- Screensaver HUD: floats dimmed at bottom, fully visible on hover -->
+<div id="ssHUD">
+  <div class="ss-kv"><div class="ss-lbl">Score</div><div class="ss-val" id="ssScore">0</div></div>
+  <div class="ss-div"></div>
+  <div class="ss-kv"><div class="ss-lbl">Best</div><div class="ss-val" id="ssBest">0</div></div>
+  <div class="ss-div"></div>
+  <div class="ss-kv"><div class="ss-lbl">Max</div><div class="ss-val" id="ssMax">0</div></div>
+  <div class="ss-div"></div>
+  <div class="ss-kv"><div class="ss-lbl">Next</div><div class="ss-val" id="ssNext">?</div></div>
+  <div class="ss-div"></div>
+  <button id="ssAutoToggle" class="active">&#9654; Auto</button>
+  <div id="ssSpeedRow">
+    <label>Speed</label>
+    <input id="ssSpeed" type="range" min="20" max="600" value="140" />
+    <span id="ssSpeedLabel">140ms</span>
+  </div>
+  <div class="ss-div"></div>
+  <div id="ssExitHint">ESC &bull; hover for controls</div>
+</div>
+
+<!-- Game-over flash overlay -->
 <div id="ssOverlay"></div>
+
+<!-- Big Board fullscreen view -->
+<div id="bbView">
+  <div id="bbGrid"></div>
+</div>
+
+<!-- Big Board floating HUD -->
+<div id="bbHUD">
+  <div class="bb-kv"><div class="bb-lbl">Score</div><div class="bb-val" id="bbScore">0</div></div>
+  <div class="bb-div"></div>
+  <div class="bb-kv"><div class="bb-lbl">Max</div><div class="bb-val" id="bbMax">0</div></div>
+  <div class="bb-div"></div>
+  <div class="bb-kv"><div class="bb-lbl">Moves</div><div class="bb-val" id="bbMoves">0</div></div>
+  <div class="bb-div"></div>
+  <div class="bb-kv"><div class="bb-lbl">Grid</div><div class="bb-val" id="bbSize">?</div></div>
+  <div class="bb-div"></div>
+  <button id="bbAutoToggle" class="active">&#9654; Auto</button>
+  <div id="bbSpeedRow">
+    <label>Speed</label>
+    <input id="bbSpeed" type="range" min="10" max="600" value="80" />
+    <span id="bbSpeedLabel">80ms</span>
+  </div>
+  <div class="bb-div"></div>
+  <div id="bbExitHint">ESC &bull; hover for controls</div>
+</div>
 
 <div class="wrap">
 
@@ -315,7 +436,7 @@
     <div class="gap10"></div>
     <div class="row">
       <button id="btnScreensaver" style="border-color:#5a3a8a;background:#1a0f2e;color:#c4a0ff">&#9654; Screensaver</button>
-      <span class="muted" style="font-size:11px">Full-screen auto-loop</span>
+      <button id="btnBigBoard" style="border-color:#1a6a3a;background:#0a1f10;color:#60d080">&#9654;&#9474; Big Board</button>
     </div>
 
     <div class="gap10"></div>
@@ -520,9 +641,10 @@
 
   /* game */
   class ThreesGame {
-    constructor(){
+    constructor(rows=4,cols=4){
+      this.rows=rows; this.cols=cols;
       this.deck=new Deck();
-      this.grid=[...Array(4)].map(()=>[0,0,0,0]);
+      this.grid=[...Array(rows)].map(()=>Array(cols).fill(0));
       this.over=false;
       this.moveCount=0;
       this.nextTileset=null;
@@ -530,14 +652,17 @@
       this.refreshNext();
     }
     seedInitial(){
-      const idx=[...Array(16)].map((_,i)=>i);
+      const total=this.rows*this.cols;
+      // Standard 4x4 seeds 9/16; large boards seed ~28% so there's room to play
+      const seedCount=(this.rows===4&&this.cols===4)?9:Math.max(4,Math.round(total*0.28));
+      const idx=[...Array(total)].map((_,i)=>i);
       for(let i=idx.length-1;i>0;i--){
         const j=Math.floor(Math.random()*(i+1));
         [idx[i],idx[j]]=[idx[j],idx[i]];
       }
-      for(let k=0;k<9;k++){
+      for(let k=0;k<seedCount;k++){
         const pos=idx[k];
-        this.grid[Math.floor(pos/4)][pos%4]=this.deck.draw123();
+        this.grid[Math.floor(pos/this.cols)][pos%this.cols]=this.deck.draw123();
       }
     }
     refreshNext(){ this.nextTileset=drawTileset(maxRank(this.grid)); }
@@ -560,7 +685,7 @@
         const res=foldLine(cells);
         if(res.changed){
           changedAny=true; mergesTotal+=res.merges; changedLines.push(i);
-          for(let k=0;k<4;k++){ const {r,c}=coords[k]; g[r][c]=res.line[k]; }
+          for(let k=0;k<coords.length;k++){ const {r,c}=coords[k]; g[r][c]=res.line[k]; }
         }
       }
       return {grid:g,changed:changedAny,merges:mergesTotal,changedLines};
@@ -581,10 +706,11 @@
       const g=sim.grid;
       const lines=getLines(g,dir);
       const li=sim.changedLines[Math.floor(Math.random()*sim.changedLines.length)];
-      const far=lines[li].coords[3];
+      const lineCoords=lines[li].coords;
+      const far={r:lineCoords[lineCoords.length-1].r, c:lineCoords[lineCoords.length-1].c};
       if(g[far.r][far.c]!==0){
-        for(let k=3;k>=0;k--){
-          const p=lines[li].coords[k];
+        for(let k=lineCoords.length-1;k>=0;k--){
+          const p=lineCoords[k];
           if(g[p.r][p.c]===0){ far.r=p.r; far.c=p.c; break; }
         }
       }
@@ -609,11 +735,11 @@
     }
   }
 
-  /* grid helpers */
+  /* grid helpers — work for any grid size */
   function foldLine(line){
-    const out=line.slice();
+    const out=line.slice(), len=out.length;
     let pos=-1;
-    for(let i=0;i<3;i++){
+    for(let i=0;i<len-1;i++){
       if(out[i]===0&&out[i+1]!==0){pos=i;break;}
       if((out[i]===1&&out[i+1]===2)||(out[i]===2&&out[i+1]===1)){pos=i;break;}
       if(out[i]>=3&&out[i]===out[i+1]){pos=i;break;}
@@ -623,25 +749,37 @@
     if(out[pos]===0){ out[pos]=out[pos+1]; }
     else if(out[pos]<3){ out[pos]=3; merges=1; }
     else { out[pos]=out[pos]+1; merges=1; }
-    for(let j=pos+1;j<3;j++) out[j]=out[j+1];
-    out[3]=0;
+    for(let j=pos+1;j<len-1;j++) out[j]=out[j+1];
+    out[len-1]=0;
     return {line:out,changed:true,merges};
   }
 
   function getLines(grid,dir){
-    const lines=[];
+    const rows=grid.length, cols=grid[0].length, lines=[];
     if(dir==='left'){
-      for(let r=0;r<4;r++)
-        lines.push({cells:[grid[r][0],grid[r][1],grid[r][2],grid[r][3]],coords:[{r,c:0},{r,c:1},{r,c:2},{r,c:3}]});
+      for(let r=0;r<rows;r++){
+        const cells=[],coords=[];
+        for(let c=0;c<cols;c++){ cells.push(grid[r][c]); coords.push({r,c}); }
+        lines.push({cells,coords});
+      }
     } else if(dir==='right'){
-      for(let r=0;r<4;r++)
-        lines.push({cells:[grid[r][3],grid[r][2],grid[r][1],grid[r][0]],coords:[{r,c:3},{r,c:2},{r,c:1},{r,c:0}]});
+      for(let r=0;r<rows;r++){
+        const cells=[],coords=[];
+        for(let c=cols-1;c>=0;c--){ cells.push(grid[r][c]); coords.push({r,c}); }
+        lines.push({cells,coords});
+      }
     } else if(dir==='up'){
-      for(let c=0;c<4;c++)
-        lines.push({cells:[grid[0][c],grid[1][c],grid[2][c],grid[3][c]],coords:[{r:0,c},{r:1,c},{r:2,c},{r:3,c}]});
+      for(let c=0;c<cols;c++){
+        const cells=[],coords=[];
+        for(let r=0;r<rows;r++){ cells.push(grid[r][c]); coords.push({r,c}); }
+        lines.push({cells,coords});
+      }
     } else if(dir==='down'){
-      for(let c=0;c<4;c++)
-        lines.push({cells:[grid[3][c],grid[2][c],grid[1][c],grid[0][c]],coords:[{r:3,c},{r:2,c},{r:1,c},{r:0,c}]});
+      for(let c=0;c<cols;c++){
+        const cells=[],coords=[];
+        for(let r=rows-1;r>=0;r--){ cells.push(grid[r][c]); coords.push({r,c}); }
+        lines.push({cells,coords});
+      }
     }
     return lines;
   }
@@ -651,14 +789,15 @@
     const sim=game.simulateMove(dir);
     if(!sim.changed) return -Infinity;
     const g=sim.grid, mr=maxRank(g);
+    const rows=g.length, cols=g[0].length;
     const empties=countEmpty(g);
-    const corners=[g[0][0],g[0][3],g[3][0],g[3][3]];
+    const corners=[g[0][0],g[0][cols-1],g[rows-1][0],g[rows-1][cols-1]];
     const maxInCorner=corners.includes(mr)?1:0;
     let rough=0;
-    for(let r=0;r<4;r++) for(let c=0;c<4;c++){
+    for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
       const v=g[r][c];
-      if(r<3) rough+=Math.abs(v-g[r+1][c]);
-      if(c<3) rough+=Math.abs(v-g[r][c+1]);
+      if(r<rows-1) rough+=Math.abs(v-g[r+1][c]);
+      if(c<cols-1) rough+=Math.abs(v-g[r][c+1]);
     }
     return (sim.merges*1000)+(empties*40)+(maxInCorner*25)-(rough*2);
   }
@@ -958,6 +1097,7 @@
 
   window.addEventListener('keydown',(e)=>{
     if(ssActive) return;
+    if(bbActive) return;
     if(wallRunning) return;
     if(e.key==='p'||e.key==='P'){ if(e.target.tagName!=='INPUT') togglePause(); return; }
     if(paused) return;
@@ -1122,6 +1262,7 @@
   document.getElementById('btnPause').addEventListener('click', togglePause);
   window.addEventListener('keydown', (e)=>{
     if(ssActive) return;
+    if(bbActive) return;
     if(e.key==='h'||e.key==='H'){
       if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
       toggleHUD();
@@ -1185,33 +1326,18 @@
     return Number(document.getElementById('ssSpeed').value);
   }
 
-  function ssCellMetrics() {
-    const headerH = 90, footerH = 64, vpad = 24, hpad = 24;
-    const avW = window.innerWidth  - hpad * 2;
-    const avH = window.innerHeight - headerH - footerH - vpad * 2;
-    const gap = Math.max(6, Math.min(14, Math.round(Math.min(avW, avH) * 0.024)));
-    const gridPad = gap;
-    const cellFromW = Math.floor((avW - gap * 3 - gridPad * 2) / 4);
-    const cellFromH = Math.floor((avH - gap * 3 - gridPad * 2) / 4);
-    const cell = Math.max(52, Math.min(cellFromW, cellFromH));
-    return { cell, gap, gridPad };
-  }
-
   function ssRender() {
     if (!ssGame) return;
-    const { cell, gap, gridPad } = ssCellMetrics();
     const gridEl = document.getElementById('ssGrid');
     const st = ssGame.state();
 
-    gridEl.style.gridTemplateColumns = 'repeat(4,' + cell + 'px)';
-    gridEl.style.gridTemplateRows    = 'repeat(4,' + cell + 'px)';
-    gridEl.style.gap     = gap + 'px';
-    gridEl.style.padding = gridPad + 'px';
-    gridEl.style.borderRadius = Math.round(cell * 0.13) + 'px';
-
-    const fsBig = Math.round(cell * 0.36);
-    const fsMid = Math.round(cell * 0.25);
-    const fsXs  = Math.round(cell * 0.18);
+    // Cells are 1fr of the viewport; compute font-size proportionally
+    const cellW = (window.innerWidth  - 8 - 12) / 4; // 4px padding*2 + 3 gaps*4px
+    const cellH = (window.innerHeight - 8 - 12) / 4;
+    const cellSize = Math.min(cellW, cellH);
+    const fsBig = Math.round(cellSize * 0.35);
+    const fsMid = Math.round(cellSize * 0.24);
+    const fsXs  = Math.round(cellSize * 0.17);
 
     gridEl.innerHTML = '';
     for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
@@ -1219,7 +1345,6 @@
       const cls = tileCls(v);
       const el = document.createElement('div');
       el.className = 'ss-cell' + (cls ? ' ' + cls : '');
-      el.style.borderRadius = Math.round(cell * 0.1) + 'px';
       el.style.fontSize = (v >= 1000 ? fsXs : v >= 100 ? fsMid : fsBig) + 'px';
       el.textContent = v === 0 ? '' : String(v);
       gridEl.appendChild(el);
@@ -1317,10 +1442,9 @@
     document.getElementById('ssSpeedLabel').textContent = ssGetSpeed() + 'ms';
   });
 
-  // clicking the background (not controls / grid) exits screensaver
+  // clicking the background (not the grid itself) exits screensaver
   document.getElementById('ssView').addEventListener('click', function(e) {
-    if (e.target.closest('#ssFooter') || e.target.closest('#ssGrid') ||
-        e.target.closest('#ssHeader')) return;
+    if (e.target.closest('#ssGrid')) return;
     exitScreensaver();
   });
 
@@ -1350,6 +1474,156 @@
       }
       if (ssGame.state().over) { sndThreesOver(); ssShowOverlay(ssGame.state().score); }
       ssRender();
+    }
+  }, { capture: true });
+
+  /* ── Big Board ───────────────────────────────────────── */
+  const BB_CELL = 42, BB_GAP = 5;
+  let bbActive = false;
+  let bbAutoMode = false;
+  let bbGame = null;
+  let bbTimer = null;
+
+  function bbDims() {
+    const cols = Math.max(4, Math.floor((window.innerWidth  + BB_GAP) / (BB_CELL + BB_GAP)));
+    const rows = Math.max(4, Math.floor((window.innerHeight + BB_GAP) / (BB_CELL + BB_GAP)));
+    return { rows, cols };
+  }
+
+  function bbGetSpeed() {
+    return Number(document.getElementById('bbSpeed').value);
+  }
+
+  function bbRender() {
+    if (!bbGame) return;
+    const gridEl = document.getElementById('bbGrid');
+    const st = bbGame.state();
+    const { rows, cols } = bbDims();
+
+    gridEl.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+    gridEl.style.gridTemplateRows    = 'repeat(' + rows + ', 1fr)';
+    gridEl.style.gap     = BB_GAP + 'px';
+    gridEl.style.padding = BB_GAP + 'px';
+
+    // Font-size proportional to actual cell width after 1fr stretch
+    const cellW = (window.innerWidth  - BB_GAP * (cols + 1)) / cols;
+    const cellH = (window.innerHeight - BB_GAP * (rows + 1)) / rows;
+    const cs = Math.min(cellW, cellH);
+    const fsBig = 13;
+    const fsMid = 10;
+    const fsXs  = 8;
+
+    gridEl.innerHTML = '';
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const v = st.grid[r][c];
+      const cls = tileCls(v);
+      const el = document.createElement('div');
+      el.className = 'bb-cell' + (cls ? ' ' + cls : '');
+      el.style.fontSize = (v >= 1000 ? fsXs : v >= 100 ? fsMid : fsBig) + 'px';
+      el.textContent = v === 0 ? '' : String(v);
+      gridEl.appendChild(el);
+    }
+
+    document.getElementById('bbScore').textContent = st.score.toLocaleString();
+    document.getElementById('bbMax').textContent   = st.maxTile.toLocaleString();
+    document.getElementById('bbMoves').textContent = st.moveCount.toLocaleString();
+  }
+
+  function bbTick() {
+    if (!bbActive || !bbAutoMode) return;
+    if (bbTimer) { clearTimeout(bbTimer); bbTimer = null; }
+    const st = bbGame.state();
+    if (st.over) {
+      // Auto-restart
+      const { rows, cols } = bbDims();
+      bbGame = new ThreesGame(rows, cols);
+      bbRender();
+    } else {
+      const dir = chooseGreedyMove(bbGame);
+      if (dir) bbGame.move(dir);
+      bbRender();
+    }
+    bbTimer = setTimeout(bbTick, bbGetSpeed());
+  }
+
+  function enterBigBoard() {
+    if (bbActive) return;
+    if (auto) setAutoplay(false);
+    if (wallRunning) stopWall();
+    if (ssActive) exitScreensaver();
+    bbAutoMode = false;
+    const { rows, cols } = bbDims();
+    bbGame = new ThreesGame(rows, cols);
+    bbActive = true;
+    document.body.classList.add('bigboard');
+    document.getElementById('bbSize').textContent = cols + 'x' + rows;
+    bbRender();
+    updateBbAutoBtn();
+    if (bbAutoMode) bbTick();
+  }
+
+  function exitBigBoard() {
+    if (!bbActive) return;
+    bbActive = false;
+    if (bbTimer) { clearTimeout(bbTimer); bbTimer = null; }
+    document.body.classList.remove('bigboard');
+    refreshUI();
+  }
+
+  function updateBbAutoBtn() {
+    const btn = document.getElementById('bbAutoToggle');
+    btn.textContent = bbAutoMode ? '\u23f8 Manual' : '\u25b6 Auto';
+    btn.classList.toggle('active', bbAutoMode);
+  }
+
+  document.getElementById('bbAutoToggle').addEventListener('click', function() {
+    bbAutoMode = !bbAutoMode;
+    updateBbAutoBtn();
+    if (bbTimer) { clearTimeout(bbTimer); bbTimer = null; }
+    if (bbAutoMode) bbTick();
+  });
+
+  document.getElementById('bbSpeed').addEventListener('input', function() {
+    document.getElementById('bbSpeedLabel').textContent = bbGetSpeed() + 'ms';
+  });
+
+  document.getElementById('bbView').addEventListener('click', function(e) {
+    if (e.target.closest('#bbGrid')) return;
+    exitBigBoard();
+  });
+
+  document.getElementById('btnBigBoard').addEventListener('click', enterBigBoard);
+
+  window.addEventListener('resize', function() {
+    if (bbActive) {
+      // Recalculate grid size on resize; start fresh
+      const { rows, cols } = bbDims();
+      if (bbTimer) { clearTimeout(bbTimer); bbTimer = null; }
+      bbGame = new ThreesGame(rows, cols);
+      document.getElementById('bbSize').textContent = cols + 'x' + rows;
+      bbRender();
+      if (bbAutoMode) bbTick();
+    }
+  });
+
+  window.addEventListener('keydown', function(e) {
+    if (!bbActive) return;
+    if (e.key === 'Escape') { exitBigBoard(); e.stopPropagation(); return; }
+    if (!bbAutoMode) {
+      const dir = KEYMAP[e.key];
+      if (!dir) return;
+      e.preventDefault(); e.stopPropagation();
+      if (bbGame.state().over) {
+        const { rows, cols } = bbDims();
+        bbGame = new ThreesGame(rows, cols);
+        bbRender(); return;
+      }
+      const result = bbGame.move(dir);
+      if (result.ok) {
+        if (result.merges > 0) sndThreesMerge(result.maxRankAfter);
+        else sndThreesSlide();
+      }
+      bbRender();
     }
   }, { capture: true });
 
