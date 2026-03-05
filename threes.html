@@ -164,12 +164,133 @@
       justify-content: center;
       justify-items: center;
     }
+
+    /* ── Screensaver mode ──────────────────────────────────── */
+    #ssView {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      z-index: 9999;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    body.screensaver #ssView { display: flex; }
+    body.screensaver .wrap,
+    body.screensaver #floatBtns { display: none; }
+
+    #ssHeader {
+      display: flex;
+      gap: 36px;
+      align-items: baseline;
+      margin-bottom: 16px;
+      user-select: none;
+    }
+    .ss-kv { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+    .ss-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; }
+    .ss-val   { color: var(--text);  font-size: 28px; font-weight: 800; line-height: 1; }
+
+    #ssGrid {
+      display: grid;
+      background: var(--grid);
+      /* columns / rows / gap / padding set dynamically via JS */
+    }
+    #ssGrid .ss-cell {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      background: var(--cell);
+      border: 1px solid var(--border);
+      color: #e6e6e6;
+      user-select: none;
+      transition: background .12s;
+    }
+
+    #ssFooter {
+      margin-top: 16px;
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      user-select: none;
+    }
+    #ssExitHint   { color: var(--muted); font-size: 12px; opacity: .45; }
+    #ssAutoToggle {
+      background: #0d1020; color: var(--text);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 5px 14px; font-size: 12px; cursor: pointer;
+    }
+    #ssAutoToggle:hover { border-color: #4b6ea8; }
+    #ssAutoToggle.active { border-color: #3b69c8; background: #0f1f44; }
+    #ssSpeedRow {
+      display: flex; gap: 6px; align-items: center;
+      color: var(--muted); font-size: 12px;
+    }
+    #ssSpeedRow input { padding: 0; cursor: pointer; }
+
+    /* Game-over overlay inside screensaver */
+    #ssOverlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.65);
+      z-index: 10000;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      pointer-events: none;
+    }
+    body.screensaver #ssOverlay.show { display: flex; }
+    .ss-go-title {
+      font-size: clamp(32px, 6vw, 64px);
+      font-weight: 900;
+      color: var(--text);
+      letter-spacing: .04em;
+      opacity: 0;
+      animation: ssFadeUp .35s ease forwards;
+    }
+    .ss-go-sub {
+      font-size: clamp(13px, 2vw, 18px);
+      color: var(--muted);
+      opacity: 0;
+      animation: ssFadeUp .35s ease .18s forwards;
+    }
+    @keyframes ssFadeUp {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
   </style>
 </head>
 <body>
 <div id="floatBtns">
   <button id="hudToggle" title="Toggle HUD (H)">&#9776;</button>
 </div>
+
+<!-- Screensaver fullscreen view -->
+<div id="ssView">
+  <div id="ssHeader">
+    <div class="ss-kv"><div class="ss-label">Score</div><div class="ss-val" id="ssScore">0</div></div>
+    <div class="ss-kv"><div class="ss-label">Best</div><div class="ss-val" id="ssBest">0</div></div>
+    <div class="ss-kv"><div class="ss-label">Max tile</div><div class="ss-val" id="ssMax">0</div></div>
+    <div class="ss-kv"><div class="ss-label">Next</div><div class="ss-val" id="ssNext" style="font-size:20px">?</div></div>
+  </div>
+  <div id="ssGrid"></div>
+  <div id="ssFooter">
+    <button id="ssAutoToggle" class="active">&#9654; Auto</button>
+    <div id="ssSpeedRow">
+      <label>Speed</label>
+      <input id="ssSpeed" type="range" min="20" max="600" value="140" style="width:100px" />
+      <span id="ssSpeedLabel">140ms</span>
+    </div>
+    <div id="ssExitHint">ESC &bull; click to exit</div>
+  </div>
+</div>
+
+<!-- Game-over flash overlay (inside screensaver) -->
+<div id="ssOverlay"></div>
+
 <div class="wrap">
 
   <div class="card" id="controlPanel">
@@ -189,6 +310,12 @@
       <button id="btnAutoDrain" class="drain" disabled>Drain</button>
       <button id="btnStep">Step</button>
       <button id="btnPause">Pause</button>
+    </div>
+
+    <div class="gap10"></div>
+    <div class="row">
+      <button id="btnScreensaver" style="border-color:#5a3a8a;background:#1a0f2e;color:#c4a0ff">&#9654; Screensaver</button>
+      <span class="muted" style="font-size:11px">Full-screen auto-loop</span>
     </div>
 
     <div class="gap10"></div>
@@ -830,6 +957,7 @@
   });
 
   window.addEventListener('keydown',(e)=>{
+    if(ssActive) return;
     if(wallRunning) return;
     if(e.key==='p'||e.key==='P'){ if(e.target.tagName!=='INPUT') togglePause(); return; }
     if(paused) return;
@@ -993,6 +1121,7 @@
   document.getElementById('hudToggle').addEventListener('click', toggleHUD);
   document.getElementById('btnPause').addEventListener('click', togglePause);
   window.addEventListener('keydown', (e)=>{
+    if(ssActive) return;
     if(e.key==='h'||e.key==='H'){
       if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
       toggleHUD();
@@ -1044,6 +1173,185 @@
       if(msg.cmd==='wallStop')  window.ThreesAPI.wall.stop();
     }catch(e){}
   });
+
+  /* ── Screensaver ─────────────────────────────────────── */
+  let ssActive = false;
+  let ssAutoMode = true;
+  let ssGame = null;
+  let ssTimer = null;
+  let ssBest = 0;
+
+  function ssGetSpeed() {
+    return Number(document.getElementById('ssSpeed').value);
+  }
+
+  function ssCellMetrics() {
+    const headerH = 90, footerH = 64, vpad = 24, hpad = 24;
+    const avW = window.innerWidth  - hpad * 2;
+    const avH = window.innerHeight - headerH - footerH - vpad * 2;
+    const gap = Math.max(6, Math.min(14, Math.round(Math.min(avW, avH) * 0.024)));
+    const gridPad = gap;
+    const cellFromW = Math.floor((avW - gap * 3 - gridPad * 2) / 4);
+    const cellFromH = Math.floor((avH - gap * 3 - gridPad * 2) / 4);
+    const cell = Math.max(52, Math.min(cellFromW, cellFromH));
+    return { cell, gap, gridPad };
+  }
+
+  function ssRender() {
+    if (!ssGame) return;
+    const { cell, gap, gridPad } = ssCellMetrics();
+    const gridEl = document.getElementById('ssGrid');
+    const st = ssGame.state();
+
+    gridEl.style.gridTemplateColumns = 'repeat(4,' + cell + 'px)';
+    gridEl.style.gridTemplateRows    = 'repeat(4,' + cell + 'px)';
+    gridEl.style.gap     = gap + 'px';
+    gridEl.style.padding = gridPad + 'px';
+    gridEl.style.borderRadius = Math.round(cell * 0.13) + 'px';
+
+    const fsBig = Math.round(cell * 0.36);
+    const fsMid = Math.round(cell * 0.25);
+    const fsXs  = Math.round(cell * 0.18);
+
+    gridEl.innerHTML = '';
+    for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) {
+      const v = st.grid[r][c];
+      const cls = tileCls(v);
+      const el = document.createElement('div');
+      el.className = 'ss-cell' + (cls ? ' ' + cls : '');
+      el.style.borderRadius = Math.round(cell * 0.1) + 'px';
+      el.style.fontSize = (v >= 1000 ? fsXs : v >= 100 ? fsMid : fsBig) + 'px';
+      el.textContent = v === 0 ? '' : String(v);
+      gridEl.appendChild(el);
+    }
+
+    document.getElementById('ssScore').textContent = st.score.toLocaleString();
+    document.getElementById('ssMax').textContent   = st.maxTile.toLocaleString();
+    if (st.score > ssBest) {
+      ssBest = st.score;
+      document.getElementById('ssBest').textContent = ssBest.toLocaleString();
+    }
+
+    const nxt = st.nextOptions;
+    const nxtEl = document.getElementById('ssNext');
+    nxtEl.textContent = st.nextIsBonus
+      ? nxt.join('/') + '\u2605'
+      : nxt.length === 1 ? String(nxt[0]) : nxt.join('/');
+  }
+
+  function ssShowOverlay(scoreVal) {
+    const el = document.getElementById('ssOverlay');
+    el.innerHTML =
+      '<div class="ss-go-title">Game Over</div>' +
+      '<div class="ss-go-sub">Score\u00a0' + scoreVal.toLocaleString() +
+      ' \u00a0\u2022\u00a0 Restarting\u2026</div>';
+    el.classList.add('show');
+  }
+  function ssHideOverlay() {
+    const el = document.getElementById('ssOverlay');
+    el.classList.remove('show');
+    el.innerHTML = '';
+  }
+
+  function ssTick() {
+    if (!ssActive || !ssAutoMode) return;
+    if (ssTimer) { clearTimeout(ssTimer); ssTimer = null; }
+    const st = ssGame.state();
+    if (st.over) {
+      ssRender();
+      ssShowOverlay(st.score);
+      ssTimer = setTimeout(function() {
+        ssHideOverlay();
+        ssGame = new ThreesGame();
+        ssRender();
+        ssTimer = setTimeout(ssTick, ssGetSpeed());
+      }, 1800);
+      return;
+    }
+    const dir = chooseGreedyMove(ssGame);
+    if (dir) ssGame.move(dir);
+    ssRender();
+    ssTimer = setTimeout(ssTick, ssGetSpeed());
+  }
+
+  function enterScreensaver() {
+    if (ssActive) return;
+    if (auto) setAutoplay(false);
+    if (wallRunning) stopWall();
+    ssActive = true;
+    ssGame = new ThreesGame();
+    document.body.classList.add('screensaver');
+    ssRender();
+    updateSsAutoBtn();
+    if (ssAutoMode) ssTick();
+  }
+
+  function exitScreensaver() {
+    if (!ssActive) return;
+    ssActive = false;
+    if (ssTimer) { clearTimeout(ssTimer); ssTimer = null; }
+    ssHideOverlay();
+    document.body.classList.remove('screensaver');
+    refreshUI();
+  }
+
+  function updateSsAutoBtn() {
+    const btn = document.getElementById('ssAutoToggle');
+    btn.textContent = ssAutoMode ? '\u23f8 Manual' : '\u25b6 Auto';
+    btn.classList.toggle('active', ssAutoMode);
+  }
+
+  document.getElementById('ssAutoToggle').addEventListener('click', function() {
+    ssAutoMode = !ssAutoMode;
+    updateSsAutoBtn();
+    if (ssTimer) { clearTimeout(ssTimer); ssTimer = null; }
+    if (ssAutoMode) {
+      if (ssGame && ssGame.state().over) {
+        ssHideOverlay(); ssGame = new ThreesGame(); ssRender();
+      }
+      ssTick();
+    }
+  });
+
+  document.getElementById('ssSpeed').addEventListener('input', function() {
+    document.getElementById('ssSpeedLabel').textContent = ssGetSpeed() + 'ms';
+  });
+
+  // clicking the background (not controls / grid) exits screensaver
+  document.getElementById('ssView').addEventListener('click', function(e) {
+    if (e.target.closest('#ssFooter') || e.target.closest('#ssGrid') ||
+        e.target.closest('#ssHeader')) return;
+    exitScreensaver();
+  });
+
+  document.getElementById('btnScreensaver').addEventListener('click', enterScreensaver);
+
+  window.addEventListener('resize', function() { if (ssActive) ssRender(); });
+
+  // Screensaver key handler — capture phase for priority
+  window.addEventListener('keydown', function(e) {
+    if (!ssActive) return;
+    if (e.key === 'Escape') { exitScreensaver(); e.stopPropagation(); return; }
+    if (!ssAutoMode) {
+      if (e.key === ' ' || e.key === 'Enter') {
+        if (ssGame.state().over) { ssHideOverlay(); ssGame = new ThreesGame(); ssRender(); }
+        e.preventDefault(); e.stopPropagation(); return;
+      }
+      const dir = KEYMAP[e.key];
+      if (!dir) return;
+      e.preventDefault(); e.stopPropagation();
+      if (ssGame.state().over) {
+        ssHideOverlay(); ssGame = new ThreesGame(); ssRender(); return;
+      }
+      const result = ssGame.move(dir);
+      if (result.ok) {
+        if (result.merges > 0) sndThreesMerge(result.maxRankAfter);
+        else sndThreesSlide();
+      }
+      if (ssGame.state().over) { sndThreesOver(); ssShowOverlay(ssGame.state().score); }
+      ssRender();
+    }
+  }, { capture: true });
 
   /* init */
   setLayout('single');
