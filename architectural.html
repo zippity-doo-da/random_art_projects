@@ -30,7 +30,7 @@
       width: min(1200px, calc(100vw - 28px));
       aspect-ratio: 16 / 9;
       height: auto;
-      background: #f7f3ea;
+      background: #f2efe1;
       border-radius: 14px;
       box-shadow: 0 12px 60px rgba(0,0,0,0.45);
     }
@@ -101,17 +101,31 @@
   ];
   const GLASS_BASE = "#f2efe1";
   const LEAD_DARK = "#2a262c";
+  const LEAD_WEIGHT = 1.22;
 
   // ---------- drawing helpers ----------
   function setInk(ctx, w) {
     ctx.strokeStyle = LEAD_DARK;
-    ctx.lineWidth = w;
+    ctx.lineWidth = w * LEAD_WEIGHT;
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
   }
 
+  function buildCellPalette(rng, palette) {
+    const accents = palette.slice(1);
+    const span = 3;
+    const start = randInt(rng, 0, Math.max(0, accents.length - span));
+    const picked = accents.slice(start, start + span);
+    while (picked.length < span) picked.push(choice(rng, accents));
+    return [
+      palette[0],
+      picked[0], picked[1], picked[2],
+      picked[0], picked[1], palette[0], picked[2]
+    ];
+  }
+
   function fillRoundRect(ctx, x, y, w, h, r) {
-    r = Math.min(r, w/2, h/2);
+    r = Math.max(0, Math.min(r, w/2, h/2));
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -123,7 +137,7 @@
   }
 
   function strokeRoundRect(ctx, x, y, w, h, r) {
-    r = Math.min(r, w/2, h/2);
+    r = Math.max(0, Math.min(r, w/2, h/2));
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -141,31 +155,43 @@
     ctx.closePath();
   }
 
-  function stripedFill(ctx, rng, x, y, w, h, palette, angleDeg, stripeW) {
-    // clip to rect, then draw stripes
+  // doClip=true  → clip to rect before drawing (default, used inside motifs)
+  // doClip=false → bleed stripes into neighbouring cells (Fake effect).
+  //                We still clip to the canvas viewport so we don't fill
+  //                millions of off-screen pixels and stall the GPU.
+  function stripedFill(ctx, rng, x, y, w, h, palette, angleDeg, stripeW, doClip) {
     ctx.save();
-    ctx.beginPath();
-    ctx.rect(x, y, w, h);
-    ctx.clip();
 
-    // background
-    ctx.fillStyle = choice(rng, palette);
-    ctx.fillRect(x, y, w, h);
+    if (doClip !== false) {
+      // Clip FIRST in the pre-rotation coordinate space so the clip is axis-aligned.
+      ctx.beginPath();
+      ctx.rect(x, y, w, h);
+      ctx.clip();
+    } else {
+      // Bleed mode: clip to canvas + a bleed margin so stripes cross into
+      // adjacent cells (the Fake effect) but we don't fill the whole GPU clip.
+      const bleed = Math.max(w, h) * 0.55;
+      ctx.beginPath();
+      ctx.rect(x - bleed, y - bleed, w + bleed * 2, h + bleed * 2);
+      ctx.clip();
+    }
 
-    const ang = angleDeg * Math.PI/180;
-    const cx = x + w/2, cy = y + h/2;
-
+    // Rotate around the rect center.
+    const ang = angleDeg * Math.PI / 180;
+    const cx = x + w / 2, cy = y + h / 2;
     ctx.translate(cx, cy);
     ctx.rotate(ang);
     ctx.translate(-cx, -cy);
 
+    // 3. Draw background + stripes using diagonal-sized coverage so rotated
+    //    stripes always fill the full (clipped) rect.
     const diag = Math.hypot(w, h);
-    const start = -diag;
-    const end = diag*2;
+    ctx.fillStyle = choice(rng, palette);
+    ctx.fillRect(cx - diag, cy - diag, diag * 2, diag * 2);
 
-    for (let t = start; t < end; t += stripeW) {
+    for (let t = -diag; t < diag; t += stripeW) {
       ctx.fillStyle = choice(rng, palette);
-      ctx.fillRect(x + t, y - diag, stripeW * 0.72, diag * 4);
+      ctx.fillRect(cx + t, cy - diag, stripeW * 0.72, diag * 2);
     }
     ctx.restore();
   }
@@ -185,38 +211,16 @@
     ctx.restore();
   }
 
-  function framedPanel(ctx, rng, rect, palette, style) {
-    const {x,y,w,h} = rect;
-    const pad = Math.max(10, Math.min(w,h)*0.06);
-    const r = Math.min(w,h)*0.06;
-
-    // base background (often diagonal stripes)
-    if (rng() < 0.7) {
-      const angle = choice(rng, [35, -35, 25, -25, 45, -45]);
-      const stripeW = clamp(Math.min(w,h)*0.11 + rng()*Math.min(w,h)*0.06, 16, 64);
-      stripedFill(ctx, rng, x, y, w, h, palette, angle, stripeW);
+  // Pass-1 background: no clipping, stripes bleed freely into neighbours.
+  function drawBackground(ctx, rng, rect, palette) {
+    const {x, y, w, h} = rect;
+    if (rng() < 0.72) {
+      const angle = choice(rng, [35, -35, 25, -25, 45, -45, 0, 90]);
+      const sw    = clamp(Math.min(w, h) * 0.11 + rng() * Math.min(w, h) * 0.06, 12, 58);
+      stripedFill(ctx, rng, x, y, w, h, palette, angle, sw, false);
     } else {
       ctx.fillStyle = choice(rng, palette);
-      fillRoundRect(ctx, x, y, w, h, r);
-    }
-
-    // outer thick border
-    setInk(ctx, Math.max(6, Math.min(w,h)*0.05));
-    strokeRoundRect(ctx, x+2, y+2, w-4, h-4, r);
-
-    // optional dotted frame
-    if (rng() < 0.55) {
-      dottedBorder(ctx, rng, x, y, w, h, pad*0.55, Math.max(2.2, Math.min(w,h)*0.012), Math.max(12, Math.min(w,h)*0.07));
-    }
-
-    // inner border
-    setInk(ctx, Math.max(3, Math.min(w,h)*0.02));
-    strokeRoundRect(ctx, x+pad, y+pad, w-pad*2, h-pad*2, r*0.7);
-
-    // inner fill patch (to give that “panel” look)
-    if (style === "solid") {
-      ctx.fillStyle = choice(rng, palette);
-      fillRoundRect(ctx, x+pad, y+pad, w-pad*2, h-pad*2, r*0.7);
+      ctx.fillRect(x, y, w, h);
     }
   }
 
@@ -274,6 +278,7 @@
   }
 
   function drawRoundWindow(ctx, rng, cx, cy, rad, frameW, palette) {
+    if (rad <= 0) return;
     // outer ring
     ctx.save();
     ctx.fillStyle = choice(rng, palette);
@@ -425,7 +430,7 @@
       const bubbles = randInt(rng, 4, 7);
       for (const side of [-1, 1]) {
         for (let i=0;i<bubbles;i++) {
-          const rr = (Math.min(w,h) * (0.035 + rng()*0.02));
+          const rr = Math.max(0, Math.min(w,h) * (0.035 + rng()*0.02));
           const cx = x + w/2 + side*(w*0.22);
           const cy = y + pad + roofH + (h - pad*2 - roofH) * ( (i+0.5)/bubbles );
           ctx.fillStyle = choice(rng, palette);
@@ -483,7 +488,7 @@
   function drawCloverWindow(ctx, rng, rect, palette) {
     const {x,y,w,h} = rect;
     const cx = x + w*0.52, cy = y + h*0.47;
-    const rr = Math.min(w,h)*0.17;
+    const rr = Math.max(1, Math.min(w,h)*0.17);
 
     // four circles (clover)
     const offs = rr*0.75;
@@ -501,7 +506,7 @@
       // subtle stripes inside
       if (rng() < 0.75) {
         ctx.save();
-        ctx.beginPath(); ctx.arc(c.x, c.y, rr*0.92, 0, Math.PI*2); ctx.clip();
+        ctx.beginPath(); ctx.arc(c.x, c.y, Math.max(0.5, rr*0.92), 0, Math.PI*2); ctx.clip();
         const stripeH = rr*0.28;
         for (let yy = c.y-rr; yy < c.y+rr; yy += stripeH) {
           ctx.fillStyle = choice(rng, palette);
@@ -569,37 +574,63 @@
     drawWindowGrid(ctx, rng, wx, wy, ww, wh, Math.max(3, w*0.015), Math.max(2, w*0.009));
   }
 
+  // Pass-2 panel: decorations + motif clipped to cell, then bold border on top.
+  // Backgrounds are NOT drawn here — they were painted in pass 1.
   function drawPanel(ctx, rng, rect, palette) {
-    // panel frame + then motif
-    framedPanel(ctx, rng, rect, palette, rng() < 0.25 ? "solid" : "stripe");
+    const {x, y, w, h} = rect;
+    const pad  = Math.max(10, Math.min(w, h) * 0.06);
+    const r    = Math.min(w, h) * 0.06;
+    const bord = Math.max(8, Math.min(w, h) * 0.048);
 
-    const {x,y,w,h} = rect;
-    const innerPad = Math.max(18, Math.min(w,h)*0.12);
-    const inner = { x: x+innerPad, y: y+innerPad, w: w-innerPad*2, h: h-innerPad*2 };
+    // ── clip to cell so decorations and motif stay inside ─────────────────
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
 
-    // motif picker weighted to resemble the reference
-    const motifs = [
-      {name:"gable", w: 0.23},
-      {name:"spire", w: 0.16},
-      {name:"doorhouse", w: 0.18},
-      {name:"medallion", w: 0.12},
-      {name:"clover", w: 0.14},
-      {name:"diamond", w: 0.17}
-    ];
-    let r = rng(), acc = 0, pick = motifs[motifs.length-1].name;
-    const sum = motifs.reduce((s,m)=>s+m.w,0);
-    for (const m of motifs) {
-      acc += m.w / sum;
-      if (r <= acc) { pick = m.name; break; }
+    // dotted frame (inside clip)
+    if (rng() < 0.55) {
+      dottedBorder(ctx, rng, x, y, w, h, pad * 0.6,
+                   Math.max(2.2, Math.min(w,h) * 0.012),
+                   Math.max(12, Math.min(w,h) * 0.07));
     }
 
-    // some motifs are better when centered; adjust a bit
+    // inner inset stroke frame
+    setInk(ctx, Math.max(3, Math.min(w, h) * 0.022));
+    strokeRoundRect(ctx, x+pad, y+pad, w-pad*2, h-pad*2, r*0.7);
+
+    // motif
+    const innerPad = Math.max(18, Math.min(w, h) * 0.12);
+    const inner = { x: x+innerPad, y: y+innerPad, w: w-innerPad*2, h: h-innerPad*2 };
+
+    // Skip motif on cells too small to draw one cleanly.
+    if (inner.w < 30 || inner.h < 30) {
+      ctx.restore();
+      setInk(ctx, bord);
+      ctx.strokeRect(x + bord*0.5, y + bord*0.5, w - bord, h - bord);
+      return;
+    }
+
+    const motifs = [
+      {name:"gable",     w: 0.23},
+      {name:"spire",     w: 0.16},
+      {name:"doorhouse", w: 0.18},
+      {name:"medallion", w: 0.12},
+      {name:"clover",    w: 0.14},
+      {name:"diamond",   w: 0.17}
+    ];
+    let rv = rng(), acc = 0, pick = motifs[motifs.length-1].name;
+    const sum = motifs.reduce((s,m) => s+m.w, 0);
+    for (const m of motifs) {
+      acc += m.w / sum;
+      if (rv <= acc) { pick = m.name; break; }
+    }
+
     const rect2 = {...inner};
     if (pick === "spire") {
       rect2.x = x + w*0.18; rect2.w = w*0.64;
       rect2.y = y + h*0.08; rect2.h = h*0.84;
     }
-
     switch (pick) {
       case "gable":     drawGable(ctx, rng, inner, palette); break;
       case "spire":     drawTallSpire(ctx, rng, rect2, palette); break;
@@ -608,6 +639,14 @@
       case "clover":    drawCloverWindow(ctx, rng, inner, palette); break;
       case "diamond":   drawDiamondWindow(ctx, rng, inner, palette); break;
     }
+
+    // ── release clip ───────────────────────────────────────────────────────
+    ctx.restore();
+
+    // ── bold cell border ON TOP (no clip — sits over everything) ──────────
+    // In Fake's work the thick outline IS the cell boundary; no dark gap needed.
+    setInk(ctx, bord);
+    ctx.strokeRect(x + bord*0.5, y + bord*0.5, w - bord, h - bord);
   }
 
   // ---------- recursive layout (Mondrian-ish subdivision) ----------
@@ -636,57 +675,49 @@
   // ---------- render ----------
   function render(seedStr) {
     const palette = choice(makeRng(seedStr + "|pal"), PALETTES);
-    const rng = makeRng(seedStr);
+    const rng     = makeRng(seedStr);
 
-    // background
-    ctx.clearRect(0,0,canvas.width,canvas.height);
+    // Cream base — the entire canvas is filled with colour, no dark gaps.
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = GLASS_BASE;
-    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // compute layout based on complexity
-    const c = parseInt(complexityEl.value, 10) / 100;
-    const depth = Math.round(3 + c*4);         // 3..7
-    const minSize = 180 - Math.round(c*70);    // 180..110
+    const c       = parseInt(complexityEl.value, 10) / 100;
+    const depth   = Math.round(3 + c * 4);      // 3..7
+    const minSize = 180 - Math.round(c * 70);   // 180..110
 
-    const margin = 18;
-    const root = {x: margin, y: margin, w: canvas.width - margin*2, h: canvas.height - margin*2};
+    const margin = 0;   // edge-to-edge fill like Fake's paintings
+    const root = { x: margin, y: margin,
+                   w: canvas.width  - margin * 2,
+                   h: canvas.height - margin * 2 };
 
     const cells = [];
     subdivide(rng, root, depth, minSize, cells);
 
-    // small jitter to avoid perfect splits
-    for (const cell of cells) {
-      const jitter = Math.min(8, Math.min(cell.w, cell.h)*0.02);
-      cell.x += (rng()-0.5)*jitter;
-      cell.y += (rng()-0.5)*jitter;
-      cell.w += (rng()-0.5)*jitter;
-      cell.h += (rng()-0.5)*jitter;
+    // Pre-compute a palette per cell so both passes use the same colours.
+    const palettes = cells.map(() => buildCellPalette(rng, palette));
+
+    // ── Pass 1: backgrounds ── no clipping, stripes bleed freely ──────────
+    // This is the Edie Fake effect: adjacent stripe fields overlap at edges,
+    // creating that pushed-together, dense pattern-field quality.
+    for (let i = 0; i < cells.length; i++) {
+      drawBackground(ctx, rng, cells[i], palettes[i]);
     }
 
-    // draw cells
-    for (const cell of cells) {
-      // enforce minimums for motif readability
-      const w = Math.max(120, cell.w);
-      const h = Math.max(120, cell.h);
-      const sep = clamp(Math.min(w, h) * 0.055, 6, 16);
-      const rect = {
-        x: cell.x + sep * 0.5,
-        y: cell.y + sep * 0.5,
-        w: Math.max(96, w - sep),
-        h: Math.max(96, h - sep)
-      };
-
-      // per-cell palette nudging: pick 6 colors + base
-      const pal = [palette[0]];
-      for (let i=0;i<8;i++) pal.push(choice(rng, palette));
-
-      drawPanel(ctx, rng, rect, pal);
+    // ── Pass 2: motifs + borders ───────────────────────────────────────────
+    // Each motif is clipped to its cell; borders are painted on top unclipped.
+    for (let i = 0; i < cells.length; i++) {
+      drawPanel(ctx, rng, cells[i], palettes[i]);
     }
 
-    // outer border
+    // outer frame
     setInk(ctx, 16);
-    ctx.strokeRect(margin*0.5, margin*0.5, canvas.width - margin, canvas.height - margin);
+    ctx.strokeRect(4, 4, canvas.width - 8, canvas.height - 8);
   }
+
+  // Stores the currently displayed seed so the complexity slider can
+  // re-render without accidentally generating a new seed.
+  let activeSeed = "";
 
   function autoSeed() {
     // short human-readable seed
@@ -694,9 +725,18 @@
   }
 
   function run() {
-    const s = (seedEl.value || "").trim() || autoSeed();
-    seedEl.value = s;
-    render(s);
+    // Use the typed seed if present, otherwise generate and display a new one.
+    const typed = seedEl.value.trim();
+    activeSeed = typed || autoSeed();
+    seedEl.value = activeSeed;
+    render(activeSeed);
+  }
+
+  function rerender() {
+    // Re-render the same seed with whatever complexity is currently set.
+    // Called by the complexity slider — must NOT generate a new seed.
+    if (!activeSeed) { run(); return; }
+    render(activeSeed);
   }
 
   function savePng() {
@@ -708,7 +748,7 @@
 
   regenBtn.addEventListener("click", run);
   saveBtn.addEventListener("click", savePng);
-  complexityEl.addEventListener("input", () => run());
+  complexityEl.addEventListener("input", rerender);
   seedEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter") run();
   });

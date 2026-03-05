@@ -1,0 +1,1063 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Tetris</title>
+  <style>
+    :root {
+      --bg:#0e1018; --panel:#161a24; --border:#2a3250; --border2:#1e2435;
+      --text:#e6e6e6; --muted:#8a93a8; --accent:#4b9fd4; --cell:#0d1020;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; min-height:100vh; }
+
+    /* ── top bar ── */
+    #topbar {
+      background:var(--panel); border-bottom:1px solid var(--border);
+      padding:9px 16px; display:flex; gap:10px; align-items:center;
+      flex-wrap:wrap; position:sticky; top:0; z-index:100;
+    }
+    #topbar h1 { font-size:14px; font-weight:700; letter-spacing:.06em; margin-right:4px; }
+    .sep { width:1px; height:18px; background:var(--border); flex-shrink:0; }
+    label.muted { font-size:11px; color:var(--muted); }
+
+    button {
+      background:var(--cell); color:var(--text);
+      border:1px solid var(--border); border-radius:8px;
+      padding:5px 12px; font-size:12px; cursor:pointer;
+      transition:border-color .15s, background .15s;
+    }
+    button:hover { border-color:#4b6ea8; }
+    button.primary { border-color:#3b69c8; background:#0f1f44; }
+    button.danger  { border-color:#8b2020; background:#1f0f0f; }
+    button.bot-on  { border-color:#4b9fd4; background:#0b2030; color:#7dd3f0; }
+    button:disabled { opacity:.4; cursor:not-allowed; }
+
+    select { background:var(--cell); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:4px 8px; font-size:12px; }
+    input[type=range] { cursor:pointer; accent-color:var(--accent); width:80px; vertical-align:middle; }
+
+    /* ── board grid ── */
+    #boards { padding:16px; display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; }
+
+    .bwrap {
+      background:var(--panel); border:2px solid var(--border);
+      border-radius:12px; padding:10px; display:flex;
+      flex-direction:column; gap:8px; align-items:center;
+      transition:border-color .15s;
+    }
+    .bwrap.focused { border-color:var(--accent); }
+    .bwrap.over    { border-color:#8b2020; opacity:.7; }
+
+    .bhead { width:100%; display:flex; justify-content:space-between; align-items:center; gap:6px; }
+    .btitle { font-size:11px; font-weight:700; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; }
+
+    .bmain { display:flex; gap:8px; align-items:flex-start; }
+    .bside { display:flex; flex-direction:column; gap:6px; align-items:center; }
+
+    canvas.main-canvas { display:block; border-radius:4px; image-rendering:pixelated; cursor:pointer; }
+    canvas.next-canvas { display:block; border-radius:4px; }
+
+    .nlabel { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; text-align:center; }
+    .hlabel { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; text-align:center; margin-top:2px; }
+
+    .stats { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; width:100%; }
+    .stat { background:var(--cell); border:1px solid var(--border2); border-radius:7px; padding:5px 7px; text-align:center; }
+    .sk { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+    .sv { font-size:13px; font-weight:700; margin-top:1px; min-height:19px; }
+
+    .bfoot { display:flex; gap:5px; width:100%; }
+    .bfoot button { flex:1; font-size:10px; padding:4px 5px; }
+
+    /* ghost / line-clear flash */
+    @keyframes flash { 0%{opacity:1} 50%{opacity:.3} 100%{opacity:1} }
+    .flash { animation:flash .2s ease; }
+
+    /* hint overlay */
+    #hint {
+      position:fixed; bottom:12px; right:14px;
+      background:var(--panel); border:1px solid var(--border);
+      border-radius:8px; padding:8px 12px;
+      font-size:11px; color:var(--muted); line-height:1.7;
+    }
+    #hint b { color:var(--text); font-weight:600; }
+  </style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>TETRIS</h1>
+  <div class="sep"></div>
+  <button class="primary" id="btnAdd">+ Board</button>
+  <button id="btnBotAll">Bot: All ON</button>
+  <button id="btnBotOff">Bot: All OFF</button>
+  <div class="sep"></div>
+  <button id="btnDrainAll" class="drain">⏹ Drain: All ON</button>
+  <button id="btnDrainOff">⏹ Drain: All OFF</button>
+  <div class="sep"></div>
+  <label class="muted">Bot speed</label>
+  <input type="range" id="globalSpeed" min="1" max="30" value="8" title="Bot moves/sec">
+  <label class="muted" id="speedLabel">8/s</label>
+  <div class="sep"></div>
+  <label class="muted">Cell size</label>
+  <select id="cellSize">
+    <option value="20">Small (200×400)</option>
+    <option value="24" selected>Medium (240×480)</option>
+    <option value="28">Large (280×560)</option>
+  </select>
+</div>
+
+<div id="boards"></div>
+
+<div id="hint">
+  <b>WASD</b> / arrows — move &amp; rotate<br>
+  <b>W / ↑</b> rotate &nbsp; <b>S / ↓</b> soft drop<br>
+  <b>Space</b> hard drop &nbsp; <b>C</b> hold<br>
+  Click a board to focus it
+</div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════
+   PIECE DATA  (SRS shapes, 4×4 bounding boxes)
+═══════════════════════════════════════════════ */
+const PIECES = [
+  { // I — cyan
+    color:'#00bcd4', dark:'#006e7f',
+    shapes:[
+      [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+      [[0,0,1,0],[0,0,1,0],[0,0,1,0],[0,0,1,0]],
+      [[0,0,0,0],[0,0,0,0],[1,1,1,1],[0,0,0,0]],
+      [[0,1,0,0],[0,1,0,0],[0,1,0,0],[0,1,0,0]],
+    ]
+  },
+  { // O — yellow
+    color:'#f9ca24', dark:'#8a7000',
+    shapes:[
+      [[0,1,1,0],[0,1,1,0],[0,0,0,0],[0,0,0,0]],
+    ]
+  },
+  { // T — purple
+    color:'#a55eea', dark:'#5a2090',
+    shapes:[
+      [[0,1,0,0],[1,1,1,0],[0,0,0,0],[0,0,0,0]],
+      [[0,1,0,0],[0,1,1,0],[0,1,0,0],[0,0,0,0]],
+      [[0,0,0,0],[1,1,1,0],[0,1,0,0],[0,0,0,0]],
+      [[0,1,0,0],[1,1,0,0],[0,1,0,0],[0,0,0,0]],
+    ]
+  },
+  { // S — green
+    color:'#26de81', dark:'#0a6e35',
+    shapes:[
+      [[0,1,1,0],[1,1,0,0],[0,0,0,0],[0,0,0,0]],
+      [[0,1,0,0],[0,1,1,0],[0,0,1,0],[0,0,0,0]],
+      [[0,0,0,0],[0,1,1,0],[1,1,0,0],[0,0,0,0]],
+      [[1,0,0,0],[1,1,0,0],[0,1,0,0],[0,0,0,0]],
+    ]
+  },
+  { // Z — red
+    color:'#fc5c65', dark:'#7a1820',
+    shapes:[
+      [[1,1,0,0],[0,1,1,0],[0,0,0,0],[0,0,0,0]],
+      [[0,0,1,0],[0,1,1,0],[0,1,0,0],[0,0,0,0]],
+      [[0,0,0,0],[1,1,0,0],[0,1,1,0],[0,0,0,0]],
+      [[0,1,0,0],[1,1,0,0],[1,0,0,0],[0,0,0,0]],
+    ]
+  },
+  { // J — blue
+    color:'#4488ff', dark:'#1a3a88',
+    shapes:[
+      [[1,0,0,0],[1,1,1,0],[0,0,0,0],[0,0,0,0]],
+      [[0,1,1,0],[0,1,0,0],[0,1,0,0],[0,0,0,0]],
+      [[0,0,0,0],[1,1,1,0],[0,0,1,0],[0,0,0,0]],
+      [[0,1,0,0],[0,1,0,0],[1,1,0,0],[0,0,0,0]],
+    ]
+  },
+  { // L — orange
+    color:'#fd9644', dark:'#7a4000',
+    shapes:[
+      [[0,0,1,0],[1,1,1,0],[0,0,0,0],[0,0,0,0]],
+      [[0,1,0,0],[0,1,0,0],[0,1,1,0],[0,0,0,0]],
+      [[0,0,0,0],[1,1,1,0],[1,0,0,0],[0,0,0,0]],
+      [[1,1,0,0],[0,1,0,0],[0,1,0,0],[0,0,0,0]],
+    ]
+  },
+];
+
+const COLS = 10, ROWS = 20;
+const SCORE_TABLE = [0, 100, 300, 500, 800]; // lines cleared → score
+const LEVEL_SPEEDS = [800,717,633,550,467,383,300,217,133,100,83,83,83,83,83,67,50,33,17,17]; // ms/tick
+
+let CELL = 24; // px, updated from selector
+let boards = [];
+let focusedBoard = null;
+let botSpeed = 8; // moves per second
+
+/* ═══════════════════════════════════════════════
+   TETRIS GAME CLASS
+═══════════════════════════════════════════════ */
+class TetrisGame {
+  constructor(id) {
+    this.id = id;
+    this.board = Array.from({length:ROWS}, () => new Array(COLS).fill(null));
+    this.score = 0;
+    this.lines = 0;
+    this.level = 0;
+    this.gameOver = false;
+    this.paused = false;
+
+    this.bag = [];
+    this.current = null;
+    this.held = null;
+    this.holdUsed = false;
+    this.next3 = [];
+
+    // fill bag and spawn
+    this._refillBag();
+    this.next3 = [this._drawFromBag(), this._drawFromBag(), this._drawFromBag()];
+    this._spawn();
+
+    // gravity timer
+    this._gravityTimer = null;
+    this._startGravity();
+
+    // bot state
+    this.botEnabled = false;
+    this._botTimer = null;
+    this._botTarget = null; // {rot, col}
+    this._botPhase = 'plan'; // 'plan' | 'move' | 'drop'
+    this.draining = false;       // when true: no auto-restart on game over
+    this._restartTimer = null;
+  }
+
+  /* ── bag / spawn ── */
+  _refillBag() {
+    const idx = [0,1,2,3,4,5,6];
+    for (let i=idx.length-1;i>0;i--){
+      const j=Math.floor(Math.random()*(i+1));
+      [idx[i],idx[j]]=[idx[j],idx[i]];
+    }
+    this.bag.push(...idx);
+  }
+  _drawFromBag() {
+    if (this.bag.length===0) this._refillBag();
+    return this.bag.shift();
+  }
+  _spawn(typeIdx) {
+    if (typeIdx === undefined) typeIdx = this.next3.shift();
+    this.next3.push(this._drawFromBag());
+    this.holdUsed = false;
+    this.current = { type:typeIdx, rot:0, row:-1, col:3 };
+    // I piece starts one row higher
+    if (typeIdx===0) this.current.row = -1;
+    if (this._collides(this.current)) {
+      this.gameOver = true;
+      sndTetOver();
+      this._stopGravity();
+      this._botStop();
+      if (this.botEnabled && !this.draining) {
+        this._restartTimer = setTimeout(()=>this.restart(), 500);
+      }
+    }
+  }
+
+  /* ── collision ── */
+  _cells(p) { // returns [{r,c}]
+    const shape = PIECES[p.type].shapes[p.rot % PIECES[p.type].shapes.length];
+    const out = [];
+    for (let r=0;r<4;r++) for (let c=0;c<4;c++)
+      if (shape[r][c]) out.push({r: p.row+r, c: p.col+c});
+    return out;
+  }
+  _collides(p) {
+    for (const {r,c} of this._cells(p)) {
+      if (c<0||c>=COLS||r>=ROWS) return true;
+      if (r>=0 && this.board[r][c]) return true;
+    }
+    return false;
+  }
+
+  /* ── ghost drop row ── */
+  _ghostRow() {
+    let p = {...this.current};
+    while (!this._collides({...p, row:p.row+1})) p.row++;
+    return p.row;
+  }
+
+  /* ── lock piece ── */
+  _lock() {
+    for (const {r,c} of this._cells(this.current)) {
+      if (r>=0) this.board[r][c] = this.current.type;
+    }
+    const cleared = this._clearLines();
+    sndTetLock();
+    if (cleared > 0) sndTetLines(cleared);
+    this.lines += cleared;
+    this.score += SCORE_TABLE[cleared] * (this.level+1);
+    this.level = Math.min(19, Math.floor(this.lines/10));
+    this._spawn();
+    this._startGravity(); // reset timer on lock
+    if (!this.gameOver && this.botEnabled) {
+      this._botPhase = 'plan';
+      this._botTarget = null;
+    }
+  }
+  _clearLines() {
+    let count=0;
+    for (let r=ROWS-1;r>=0;r--) {
+      if (this.board[r].every(c=>c!==null)) {
+        this.board.splice(r,1);
+        this.board.unshift(new Array(COLS).fill(null));
+        count++; r++; // recheck same row index
+      }
+    }
+    return count;
+  }
+
+  /* ── gravity ── */
+  _startGravity() {
+    this._stopGravity();
+    if (this.gameOver||this.paused) return;
+    const delay = LEVEL_SPEEDS[this.level] || 17;
+    this._gravityTimer = setTimeout(()=>{
+      if (!this.gameOver&&!this.paused) {
+        if (this._collides({...this.current,row:this.current.row+1})) {
+          this._lock();
+        } else {
+          this.current.row++;
+          this._startGravity();
+        }
+      }
+    }, delay);
+  }
+  _stopGravity() {
+    if (this._gravityTimer) { clearTimeout(this._gravityTimer); this._gravityTimer=null; }
+  }
+
+  /* ── player moves ── */
+  moveLeft()  { if(!this._active())return; const p={...this.current,col:this.current.col-1}; if(!this._collides(p))this.current.col--; }
+  moveRight() { if(!this._active())return; const p={...this.current,col:this.current.col+1}; if(!this._collides(p))this.current.col++; }
+  softDrop()  {
+    if(!this._active())return;
+    if(this._collides({...this.current,row:this.current.row+1})){ this._lock(); }
+    else { this.current.row++; this.score++; this._startGravity(); }
+  }
+  hardDrop() {
+    if(!this._active())return;
+    const ghostR = this._ghostRow();
+    this.score += 2*(ghostR - this.current.row);
+    this.current.row = ghostR;
+    this._lock();
+  }
+  rotate(dir=1) {
+    if(!this._active())return;
+    const numRots = PIECES[this.current.type].shapes.length;
+    const newRot = ((this.current.rot + dir) % numRots + numRots) % numRots;
+    // SRS wall kicks: try offsets
+    const kicks = [[0,0],[0,-1],[0,1],[0,-2],[0,2],[-1,0],[-1,-1],[-1,1]];
+    for (const [dr,dc] of kicks) {
+      const p = {...this.current, rot:newRot, row:this.current.row+dr, col:this.current.col+dc};
+      if (!this._collides(p)) { Object.assign(this.current,p); return; }
+    }
+  }
+  hold() {
+    if(!this._active()||this.holdUsed) return;
+    this.holdUsed = true;
+    const cur = this.current.type;
+    if (this.held===null) { this.held=cur; this._spawn(); }
+    else { const tmp=this.held; this.held=cur; this._spawn(tmp); }
+    if (this.botEnabled) { this._botPhase='plan'; this._botTarget=null; }
+  }
+  _active() { return !this.gameOver && !this.paused && this.current; }
+
+  /* ── pause / restart ── */
+  togglePause() {
+    if (this.gameOver) return;
+    this.paused = !this.paused;
+    if (this.paused) { this._stopGravity(); this._botStop(); }
+    else { this._startGravity(); if(this.botEnabled) this._botStart(); }
+  }
+  restart() {
+    this._stopGravity(); this._botStop();
+    if (this._restartTimer) { clearTimeout(this._restartTimer); this._restartTimer=null; }
+    this.board = Array.from({length:ROWS},()=>new Array(COLS).fill(null));
+    this.score=0; this.lines=0; this.level=0;
+    this.gameOver=false; this.paused=false;
+    this.held=null; this.holdUsed=false;
+    this.bag=[]; this.next3=[];
+    this._refillBag();
+    this.next3=[this._drawFromBag(),this._drawFromBag(),this._drawFromBag()];
+    this._spawn();
+    this._startGravity();
+    if (this.botEnabled) this._botStart();
+  }
+
+  /* ═══════════════════════════════════════════
+     BOT  (heuristic AI)
+  ═══════════════════════════════════════════ */
+  _evalBoard(board) {
+    // aggregate height
+    let aggH=0, holes=0, bumpiness=0;
+    const heights = new Array(COLS).fill(0);
+    for (let c=0;c<COLS;c++) {
+      for (let r=0;r<ROWS;r++) {
+        if (board[r][c]) { heights[c]=ROWS-r; break; }
+      }
+    }
+    for (let c=0;c<COLS;c++) aggH+=heights[c];
+    for (let c=0;c<COLS-1;c++) bumpiness+=Math.abs(heights[c]-heights[c+1]);
+    // holes: empty cells with filled cell above
+    for (let c=0;c<COLS;c++) {
+      let block=false;
+      for (let r=0;r<ROWS;r++) {
+        if (board[r][c]) block=true;
+        else if (block) holes++;
+      }
+    }
+    // completed lines (don't actually clear, just count)
+    let completedLines=0;
+    for (let r=0;r<ROWS;r++) if(board[r].every(c=>c!==null)) completedLines++;
+    // weights from the seminal Dellacherie/El-Tetris paper
+    return -0.510066*aggH + 0.760666*completedLines - 0.35663*holes - 0.184483*bumpiness;
+  }
+
+  _simulatePlacement(typeIdx, rot, col) {
+    const rot_ = rot % PIECES[typeIdx].shapes.length;
+    const shape = PIECES[typeIdx].shapes[rot_];
+    // find cells
+    let startRow = -2;
+    // drop
+    let row = startRow;
+    const tryPlace = (r) => {
+      const cells=[];
+      for (let dr=0;dr<4;dr++) for (let dc=0;dc<4;dc++)
+        if(shape[dr][dc]) cells.push({r:r+dr, c:col+dc});
+      for (const {r,c} of cells) if(c<0||c>=COLS||r>=ROWS) return false;
+      for (const {r,c} of cells) if(r>=0&&this.board[r][c]) return false;
+      return cells;
+    };
+    while (tryPlace(row+1)) row++;
+    const cells = tryPlace(row);
+    if (!cells) return null;
+    // check any cell is in visible area
+    if (!cells.some(({r})=>r>=0)) return null;
+    // clone board and place
+    const b = this.board.map(r=>[...r]);
+    for (const {r,c} of cells) if(r>=0) b[r][c]=typeIdx;
+    // clear lines
+    for (let r=ROWS-1;r>=0;r--) {
+      if(b[r].every(c=>c!==null)){b.splice(r,1);b.unshift(new Array(COLS).fill(null));r++;}
+    }
+    return b;
+  }
+
+  _bestMove(typeIdx) {
+    const numRots = PIECES[typeIdx].shapes.length;
+    let best = null, bestScore = -Infinity;
+    for (let rot=0;rot<numRots;rot++) {
+      for (let col=-1;col<COLS;col++) {
+        const b = this._simulatePlacement(typeIdx, rot, col);
+        if (!b) continue;
+        const s = this._evalBoard(b);
+        if (s > bestScore) { bestScore=s; best={rot,col}; }
+      }
+    }
+    return best;
+  }
+
+  _botPlan() {
+    if (!this.current) return;
+    this._botTarget = this._bestMove(this.current.type);
+    this._botPhase = 'move';
+  }
+
+  _botStep() {
+    if (!this._active()) return;
+    if (this._botPhase==='plan' || !this._botTarget) { this._botPlan(); return; }
+
+    const t = this._botTarget;
+    const numRots = PIECES[this.current.type].shapes.length;
+    const targetRot = t.rot % numRots;
+    const curRot = this.current.rot % numRots;
+
+    if (curRot !== targetRot) {
+      this.rotate(1); return;
+    }
+    if (this.current.col < t.col) { this.moveRight(); return; }
+    if (this.current.col > t.col) { this.moveLeft(); return; }
+    // in position — hard drop
+    this.hardDrop();
+    this._botPhase = 'plan';
+    this._botTarget = null;
+  }
+
+  _botStart() {
+    this._botStop();
+    const interval = Math.round(1000 / botSpeed);
+    this._botTimer = setInterval(()=>{
+      if (!this.gameOver && !this.paused) this._botStep();
+    }, interval);
+  }
+  _botStop() {
+    if (this._botTimer) { clearInterval(this._botTimer); this._botTimer=null; }
+  }
+  setBot(on) {
+    this.botEnabled = on;
+    if (on && !this.gameOver && !this.paused) this._botStart();
+    else this._botStop();
+  }
+  setDrain(on) {
+    this.draining = on;
+    // turning drain off while bot is running and game is already over → restart now
+    if (!on && this.botEnabled && this.gameOver) {
+      if (this._restartTimer) { clearTimeout(this._restartTimer); this._restartTimer=null; }
+      this.restart();
+    }
+  }
+  updateBotSpeed() {
+    if (this.botEnabled && !this.gameOver && !this.paused) this._botStart();
+  }
+  destroy() {
+    this._stopGravity(); this._botStop();
+    if (this._restartTimer) { clearTimeout(this._restartTimer); this._restartTimer=null; }
+  }
+}
+
+
+/* ═══════════════════════════════════════════════
+   RENDERING
+═══════════════════════════════════════════════ */
+function drawBoard(game, ctx) {
+  const cs = CELL;
+  ctx.clearRect(0, 0, COLS*cs, ROWS*cs);
+
+  // background grid
+  ctx.fillStyle = '#0a0d16';
+  ctx.fillRect(0,0,COLS*cs,ROWS*cs);
+  ctx.strokeStyle = '#141828';
+  ctx.lineWidth = 0.5;
+  for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++) {
+    ctx.strokeRect(c*cs+0.5, r*cs+0.5, cs-1, cs-1);
+  }
+
+  // locked cells
+  for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++) {
+    if (game.board[r][c]!==null) {
+      drawCell(ctx, c*cs, r*cs, cs, PIECES[game.board[r][c]].color, PIECES[game.board[r][c]].dark);
+    }
+  }
+
+  if (game.current && !game.gameOver) {
+    // ghost
+    const ghostR = game._ghostRow();
+    for (const {r,c} of game._cells({...game.current, row:ghostR})) {
+      if (r>=0) {
+        ctx.fillStyle = PIECES[game.current.type].color + '28';
+        ctx.strokeStyle = PIECES[game.current.type].color + '60';
+        ctx.lineWidth = 1;
+        ctx.fillRect(c*cs+1, r*cs+1, cs-2, cs-2);
+        ctx.strokeRect(c*cs+1.5, r*cs+1.5, cs-3, cs-3);
+      }
+    }
+    // current piece
+    for (const {r,c} of game._cells(game.current)) {
+      if (r>=0) drawCell(ctx, c*cs, r*cs, cs, PIECES[game.current.type].color, PIECES[game.current.type].dark);
+    }
+  }
+
+  if (game.gameOver) {
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(0,0,COLS*cs,ROWS*cs);
+    ctx.fillStyle = '#fc5c65';
+    ctx.font = `bold ${cs*1.1}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.fillText('GAME', COLS*cs/2, ROWS*cs/2 - cs*0.3);
+    ctx.fillText('OVER', COLS*cs/2, ROWS*cs/2 + cs*1.1);
+    ctx.font = `${cs*0.55}px system-ui`;
+    ctx.fillStyle = '#8a93a8';
+    ctx.fillText('click restart', COLS*cs/2, ROWS*cs/2 + cs*2.4);
+  } else if (game.paused) {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0,0,COLS*cs,ROWS*cs);
+    ctx.fillStyle = '#4b9fd4';
+    ctx.font = `bold ${cs*1.1}px system-ui`;
+    ctx.textAlign = 'center';
+    ctx.fillText('PAUSE', COLS*cs/2, ROWS*cs/2 + cs*0.4);
+  }
+}
+
+function drawCell(ctx, x, y, cs, color, dark) {
+  // main fill
+  ctx.fillStyle = color;
+  ctx.fillRect(x+1, y+1, cs-2, cs-2);
+  // highlight top-left
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fillRect(x+1, y+1, cs-2, 3);
+  ctx.fillRect(x+1, y+1, 3, cs-2);
+  // shadow bottom-right
+  ctx.fillStyle = dark || 'rgba(0,0,0,0.35)';
+  ctx.fillRect(x+1, y+cs-4, cs-2, 3);
+  ctx.fillRect(x+cs-4, y+1, 3, cs-2);
+}
+
+function drawNext(ctx, typeIdx, cs=18) {
+  const w = ctx.canvas.width, h = ctx.canvas.height;
+  ctx.fillStyle = '#0a0d16';
+  ctx.fillRect(0,0,w,h);
+  if (typeIdx===null||typeIdx===undefined) return;
+  const shape = PIECES[typeIdx].shapes[0];
+  // bounding box
+  let minR=3,maxR=0,minC=3,maxC=0;
+  for(let r=0;r<4;r++)for(let c=0;c<4;c++)if(shape[r][c]){minR=Math.min(minR,r);maxR=Math.max(maxR,r);minC=Math.min(minC,c);maxC=Math.max(maxC,c);}
+  const pw=(maxC-minC+1)*cs, ph=(maxR-minR+1)*cs;
+  const ox=(w-pw)/2, oy=(h-ph)/2;
+  for(let r=minR;r<=maxR;r++)for(let c=minC;c<=maxC;c++)
+    if(shape[r][c]) drawCell(ctx, ox+(c-minC)*cs, oy+(r-minR)*cs, cs, PIECES[typeIdx].color, PIECES[typeIdx].dark);
+}
+
+function drawHold(ctx, typeIdx, cs=18) { drawNext(ctx, typeIdx, cs); }
+
+
+/* ═══════════════════════════════════════════════
+   BOARD UI
+═══════════════════════════════════════════════ */
+let boardCounter = 0;
+
+function createBoard() {
+  boardCounter++;
+  const id = boardCounter;
+
+  const game = new TetrisGame(id);
+
+  // DOM
+  const wrap = document.createElement('div');
+  wrap.className = 'bwrap';
+  wrap.dataset.id = id;
+
+  // header
+  const bhead = document.createElement('div');
+  bhead.className = 'bhead';
+  const btitle = document.createElement('span');
+  btitle.className = 'btitle';
+  btitle.textContent = `Board ${id}`;
+  const btnClose = document.createElement('button');
+  btnClose.className = 'danger';
+  btnClose.textContent = '✕';
+  btnClose.title = 'Remove board';
+  btnClose.style.padding='3px 8px';
+  btnClose.addEventListener('click', ()=>removeBoard(id));
+  bhead.append(btitle, btnClose);
+
+  // main area
+  const bmain = document.createElement('div');
+  bmain.className = 'bmain';
+
+  // side panel
+  const bside = document.createElement('div');
+  bside.className = 'bside';
+
+  const nlabel = document.createElement('div');
+  nlabel.className = 'nlabel';
+  nlabel.textContent = 'NEXT';
+
+  const nextCanvases = [0,1,2].map(()=>{
+    const c=document.createElement('canvas');
+    c.className='next-canvas';
+    c.width=68; c.height=54;
+    return c;
+  });
+
+  const hlabel = document.createElement('div');
+  hlabel.className = 'hlabel';
+  hlabel.textContent = 'HOLD';
+
+  const holdCanvas = document.createElement('canvas');
+  holdCanvas.className='next-canvas';
+  holdCanvas.width=68; holdCanvas.height=54;
+
+  bside.append(nlabel, ...nextCanvases, hlabel, holdCanvas);
+
+  // main canvas
+  const mainCanvas = document.createElement('canvas');
+  mainCanvas.className = 'main-canvas';
+  mainCanvas.width  = COLS * CELL;
+  mainCanvas.height = ROWS * CELL;
+  mainCanvas.addEventListener('click', ()=>setFocus(id));
+  mainCanvas.title = 'Click to focus';
+
+  bmain.append(mainCanvas, bside);
+
+  // stats
+  const stats = document.createElement('div');
+  stats.className = 'stats';
+  const mkStat = (k)=>{
+    const d=document.createElement('div'); d.className='stat';
+    const sk=document.createElement('div'); sk.className='sk'; sk.textContent=k;
+    const sv=document.createElement('div'); sv.className='sv'; sv.textContent='0';
+    d.append(sk,sv); return {el:d, val:sv};
+  };
+  const sc=mkStat('SCORE'), ln=mkStat('LINES'), lv=mkStat('LEVEL');
+  stats.append(sc.el, ln.el, lv.el);
+
+  // footer controls
+  const bfoot = document.createElement('div');
+  bfoot.className = 'bfoot';
+
+  const btnPause = document.createElement('button');
+  btnPause.textContent = '⏸ Pause';
+  btnPause.addEventListener('click', ()=>{
+    game.togglePause();
+    btnPause.textContent = game.paused ? '▶ Resume' : '⏸ Pause';
+  });
+
+  const btnRestart = document.createElement('button');
+  btnRestart.textContent = '↺ Restart';
+  btnRestart.addEventListener('click', ()=>{
+    game.restart();
+    btnPause.textContent = '⏸ Pause';
+  });
+
+  const btnBot = document.createElement('button');
+  btnBot.textContent = '🤖 Bot OFF';
+  btnBot.addEventListener('click', ()=>{
+    game.setBot(!game.botEnabled);
+    btnBot.className = game.botEnabled ? 'bot-on' : '';
+    btnBot.textContent = game.botEnabled ? '🤖 Bot ON' : '🤖 Bot OFF';
+  });
+
+  const btnDrain = document.createElement('button');
+  btnDrain.textContent = '⏹ Drain';
+  btnDrain.title = 'Drain: let this game die without auto-restarting';
+  btnDrain.addEventListener('click', ()=>{
+    game.setDrain(!game.draining);
+    btnDrain.className = game.draining ? 'drain' : '';
+    btnDrain.textContent = game.draining ? '⏹ Drain ON' : '⏹ Drain';
+  });
+
+  bfoot.append(btnPause, btnRestart, btnBot, btnDrain);
+
+  wrap.append(bhead, bmain, stats, bfoot);
+  document.getElementById('boards').appendChild(wrap);
+
+  const ctx = mainCanvas.getContext('2d');
+  const nextCtxs = nextCanvases.map(c=>c.getContext('2d'));
+  const holdCtx = holdCanvas.getContext('2d');
+
+  const boardObj = { id, game, wrap, ctx, nextCtxs, holdCtx, sc, ln, lv, btnPause, btnBot, btnDrain, mainCanvas };
+  boards.push(boardObj);
+
+  if (boards.length===1) setFocus(id);
+
+  return boardObj;
+}
+
+function removeBoard(id) {
+  const idx = boards.findIndex(b=>b.id===id);
+  if (idx<0) return;
+  boards[idx].game.destroy();
+  boards[idx].wrap.remove();
+  boards.splice(idx,1);
+  if (focusedBoard===id) {
+    focusedBoard = boards.length ? boards[0].id : null;
+    if (focusedBoard) boards[0].wrap.classList.add('focused');
+  }
+}
+
+function setFocus(id) {
+  boards.forEach(b=>b.wrap.classList.remove('focused'));
+  focusedBoard = id;
+  const b = boards.find(b=>b.id===id);
+  if (b) b.wrap.classList.add('focused');
+}
+
+function updateSize() {
+  boards.forEach(b=>{
+    b.mainCanvas.width  = COLS*CELL;
+    b.mainCanvas.height = ROWS*CELL;
+  });
+}
+
+
+/* ═══════════════════════════════════════════════
+   RENDER LOOP
+═══════════════════════════════════════════════ */
+function renderLoop() {
+  for (const b of boards) {
+    drawBoard(b.game, b.ctx);
+    // next pieces
+    for (let i=0;i<3;i++) drawNext(b.nextCtxs[i], b.game.next3[i], 16);
+    drawHold(b.holdCtx, b.game.held, 16);
+    // stats
+    b.sc.val.textContent = b.game.score.toLocaleString();
+    b.ln.val.textContent = b.game.lines;
+    b.lv.val.textContent = b.game.level;
+    // game over class
+    if (b.game.gameOver) b.wrap.classList.add('over'); else b.wrap.classList.remove('over');
+  }
+  requestAnimationFrame(renderLoop);
+}
+
+
+/* ═══════════════════════════════════════════════
+   INPUT
+═══════════════════════════════════════════════ */
+const keyRepeat = {}; // for held keys
+
+document.addEventListener('keydown', e=>{
+  // don't steal from inputs/selects
+  if (e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+
+  const b = boards.find(b=>b.id===focusedBoard);
+  if (!b) return;
+  const g = b.game;
+
+  if (e.repeat && keyRepeat[e.code]) return; // throttle handled separately
+
+  switch(e.code) {
+    case 'KeyA': case 'ArrowLeft':  g.moveLeft();  break;
+    case 'KeyD': case 'ArrowRight': g.moveRight(); break;
+    case 'KeyS': case 'ArrowDown':  g.softDrop();  e.preventDefault(); break;
+    case 'KeyW': case 'ArrowUp':    g.rotate(1);   e.preventDefault(); break;
+    case 'KeyQ':                    g.rotate(-1);  break;
+    case 'Space':                   g.hardDrop();  e.preventDefault(); break;
+    case 'KeyC':                    g.hold();      break;
+    case 'KeyP': case 'Escape':
+      g.togglePause();
+      b.btnPause.textContent = g.paused ? '▶ Resume' : '⏸ Pause';
+      break;
+    case 'KeyR':
+      g.restart();
+      b.btnPause.textContent = '⏸ Pause';
+      break;
+  }
+});
+
+/* ═══════════════════════════════════════════════
+   PUBLIC API  (for browser console automation)
+   e.g.: tetrisAPI.getGame(1).hardDrop()
+         tetrisAPI.botAll(true)
+         tetrisAPI.addBoard()
+═══════════════════════════════════════════════ */
+window.tetrisAPI = {
+  getGame: (id) => boards.find(b=>b.id===id)?.game,
+  getGames: () => boards.map(b=>b.game),
+  addBoard: () => createBoard(),
+  removeBoard: (id) => removeBoard(id),
+  botAll: (on) => {
+    boards.forEach(b=>{
+      b.game.setBot(on);
+      b.btnBot.className = on ? 'bot-on' : '';
+      b.btnBot.textContent = on ? '🤖 Bot ON' : '🤖 Bot OFF';
+    });
+  },
+  drainAll: (on) => {
+    boards.forEach(b=>{
+      b.game.setDrain(on);
+      b.btnDrain.className = on ? 'drain' : '';
+      b.btnDrain.textContent = on ? '⏹ Drain ON' : '⏹ Drain';
+    });
+  },
+  setBotSpeed: (fps) => {
+    botSpeed = Math.max(1,Math.min(60,fps));
+    document.getElementById('globalSpeed').value = botSpeed;
+    document.getElementById('speedLabel').textContent = botSpeed+'/s';
+    boards.forEach(b=>b.game.updateBotSpeed());
+  },
+  injectKey: (id, key) => {
+    const b = boards.find(b=>b.id===id);
+    if (!b) return;
+    const g = b.game;
+    switch(key.toLowerCase()) {
+      case 'left': case 'a': g.moveLeft(); break;
+      case 'right':case 'd': g.moveRight(); break;
+      case 'down': case 's': g.softDrop(); break;
+      case 'up':   case 'w': g.rotate(1); break;
+      case 'q':              g.rotate(-1); break;
+      case 'space':          g.hardDrop(); break;
+      case 'c':              g.hold(); break;
+      case 'r':              g.restart(); break;
+    }
+  },
+  // run arbitrary automation: pass a function(game) called on bot tick
+  customBot: (id, fn, fps=10) => {
+    const b = boards.find(b=>b.id===id);
+    if (!b) return;
+    b.game._botStop();
+    b.game._botTimer = setInterval(()=>{
+      if (!b.game.gameOver && !b.game.paused) fn(b.game);
+    }, Math.round(1000/fps));
+  },
+};
+
+
+/* ═══════════════════════════════════════════════
+   CONTROLS
+═══════════════════════════════════════════════ */
+document.getElementById('btnAdd').addEventListener('click', ()=>createBoard());
+
+document.getElementById('btnBotAll').addEventListener('click', ()=>tetrisAPI.botAll(true));
+document.getElementById('btnBotOff').addEventListener('click', ()=>tetrisAPI.botAll(false));
+document.getElementById('btnDrainAll').addEventListener('click', ()=>tetrisAPI.drainAll(true));
+document.getElementById('btnDrainOff').addEventListener('click', ()=>tetrisAPI.drainAll(false));
+
+const speedSlider = document.getElementById('globalSpeed');
+const speedLabel  = document.getElementById('speedLabel');
+speedSlider.addEventListener('input', ()=>{
+  botSpeed = +speedSlider.value;
+  speedLabel.textContent = botSpeed+'/s';
+  boards.forEach(b=>b.game.updateBotSpeed());
+});
+
+document.getElementById('cellSize').addEventListener('change', e=>{
+  CELL = +e.target.value;
+  updateSize();
+});
+
+
+/* ═══════════════════════════════════════════════
+   AUDIO  (Korobeiniki theme + SFX)
+═══════════════════════════════════════════════ */
+let _tetAC = null;
+function tetAC() {
+  if (!_tetAC) _tetAC = new (window.AudioContext || window.webkitAudioContext)();
+  if (_tetAC.state === 'suspended') _tetAC.resume();
+  return _tetAC;
+}
+
+// Korobeiniki (Tetris Type A) — BPM 150, Q=0.4s, E=0.2s, H=0.8s, DQ=0.6s
+const TETRIS_THEME = [
+  // ── Part A ──
+  [659,.4],[494,.2],[523,.2],[587,.4],[523,.2],[494,.2],
+  [440,.4],[440,.2],[523,.2],[659,.4],[587,.2],[523,.2],
+  [494,.6],[523,.2],[587,.4],[659,.4],
+  [523,.4],[440,.4],[440,.8],
+  // ── Part B ──
+  [392,.2],[392,.2],[494,.4],[587,.4],[740,.4],
+  [880,.4],[784,.2],[740,.2],[659,.6],
+  [523,.2],[659,.4],[587,.2],[523,.2],
+  [494,.6],[523,.2],[587,.4],[659,.4],
+  [523,.4],[440,.4],[440,.8],
+];
+// Bass line (plays one octave lower, doubled rhythm)
+const TETRIS_BASS = [
+  [220,.8],[196,.4],[220,.4],[196,.4],[220,.4],
+  [196,.8],[196,.4],[220,.4],[196,.4],[220,.4],
+  [247,.8],[247,.4],[247,.4],[247,.8],
+  [262,.4],[220,.4],[220,.8],
+  [196,.8],[247,.8],[262,.8],[247,.8],[220,.8],[220,.8],
+  [247,.8],[247,.4],[247,.4],[247,.8],
+  [262,.4],[220,.4],[220,.8],
+];
+
+let _tetMusicIdx = 0, _tetBassIdx = 0;
+let _tetMusicTimer = null, _tetBassTimer = null;
+let _tetMusicOn = false;
+
+function _tetMusicTick() {
+  if (!_tetMusicOn) return;
+  const [f, d] = TETRIS_THEME[_tetMusicIdx % TETRIS_THEME.length];
+  const ac = tetAC();
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = 'square'; o.frequency.value = f;
+  g.gain.setValueAtTime(0.10, ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + d * 0.82);
+  o.connect(g); g.connect(ac.destination);
+  o.start(); o.stop(ac.currentTime + d);
+  _tetMusicIdx++;
+  if (_tetMusicIdx >= TETRIS_THEME.length) _tetMusicIdx = 0;
+  _tetMusicTimer = setTimeout(_tetMusicTick, d * 1000);
+}
+function _tetBassTick() {
+  if (!_tetMusicOn) return;
+  const [f, d] = TETRIS_BASS[_tetBassIdx % TETRIS_BASS.length];
+  if (f > 0) {
+    const ac = tetAC();
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'triangle'; o.frequency.value = f;
+    g.gain.setValueAtTime(0.06, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + d * 0.7);
+    o.connect(g); g.connect(ac.destination);
+    o.start(); o.stop(ac.currentTime + d);
+  }
+  _tetBassIdx++;
+  if (_tetBassIdx >= TETRIS_BASS.length) _tetBassIdx = 0;
+  _tetBassTimer = setTimeout(_tetBassTick, d * 1000);
+}
+
+function startTetrisMusic() {
+  if (_tetMusicOn) return;
+  _tetMusicOn = true;
+  _tetMusicIdx = 0; _tetBassIdx = 0;
+  _tetMusicTick();
+  _tetBassTick();
+}
+function stopTetrisMusic() {
+  _tetMusicOn = false;
+  if (_tetMusicTimer) { clearTimeout(_tetMusicTimer); _tetMusicTimer = null; }
+  if (_tetBassTimer)  { clearTimeout(_tetBassTimer);  _tetBassTimer  = null; }
+}
+
+function sndTetLock() {
+  const ac = tetAC();
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = 'sine'; o.frequency.value = 180;
+  g.gain.setValueAtTime(0.15, ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.07);
+  o.connect(g); g.connect(ac.destination);
+  o.start(); o.stop(ac.currentTime + 0.08);
+}
+
+function sndTetLines(count) {
+  const ac = tetAC();
+  if (count === 4) {
+    // Tetris! — four-note ascending fanfare
+    [523, 784, 1047, 1568].forEach((f, i) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      const t = ac.currentTime + i * 0.055;
+      o.type = 'square'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.14, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
+      o.connect(g); g.connect(ac.destination);
+      o.start(t); o.stop(t + 0.14);
+    });
+  } else {
+    [523, 659, 784].slice(0, count).forEach((f, i) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      const t = ac.currentTime + i * 0.06;
+      o.type = 'square'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+      o.connect(g); g.connect(ac.destination);
+      o.start(t); o.stop(t + 0.065);
+    });
+  }
+}
+
+function sndTetOver() {
+  const ac = tetAC();
+  [392, 349, 311, 261, 220, 185].forEach((f, i) => {
+    const o = ac.createOscillator(), g = ac.createGain();
+    const t = ac.currentTime + i * 0.15;
+    o.type = 'sawtooth'; o.frequency.value = f;
+    g.gain.setValueAtTime(0.17, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
+    o.connect(g); g.connect(ac.destination);
+    o.start(t); o.stop(t + 0.14);
+  });
+}
+
+/* ═══════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════ */
+// Start music on first user interaction
+const _tetFirstPlay = () => {
+  startTetrisMusic();
+  document.removeEventListener('keydown', _tetFirstPlay);
+  document.removeEventListener('click',   _tetFirstPlay);
+};
+document.addEventListener('keydown', _tetFirstPlay);
+document.addEventListener('click',   _tetFirstPlay);
+
+createBoard();
+renderLoop();
+</script>
+</body>
+</html>
